@@ -13,9 +13,7 @@ class ToolScheduler(core.tool.Tool):
         """
         async def scheduled_event(instructions: str):
             try:
-                message = await self.manager.AI.recv(
-                    self.channel.send("system", f"This is a scheduled event! Please follow these instructions:\n{instructions_to_ai}", add_to_ctx=False, stream=False)
-                )
+                message = await self.channel.send("system", f"This is a scheduled event! Please follow these instructions:\n{instructions_to_ai}", use_context=False, use_tools=True)
             except Exception as e:
                 return await self.channel.announce(f"error: {e}")
 

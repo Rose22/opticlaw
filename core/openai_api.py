@@ -16,19 +16,23 @@ class OpenAIClient():
         self._AI = openai.OpenAI(*args, **kwargs)
 
         self._model = model
-        self._context = []
+        self._turns = []
 
-    def insert_context(self, role: str, content: str):
-        """inserts something into context as specified role"""
+    def insert_turn(self, role: str, content: str):
+        """inserts a turn (message with role and content) into context, trimming when needed"""
 
-        return self._context.append({"role": role, "content": content})
+        self.trim_turns()
+        return self._turns.append({"role": role, "content": content})
 
-    def trim_context(self, max_turns: int):
+    def trim_turns(self, max_turns: int = None):
         """trims context to keep token consumption low"""
-        if len(self._context) > max_turns:
-            self._context.pop(0)
-            return True
-        return False
+
+        if not max_turns:
+            max_turns = core.config.get("max_turns", 20)
+
+        while len(self._turns) > max_turns:
+            self._turns.pop(0)
+        return len(self._turns) <= max_turns
 
     def _request(self, context, **kwargs):
         """send a request to the LLM and return the response object"""
@@ -36,28 +40,41 @@ class OpenAIClient():
         response = self._AI.chat.completions.create(
             model=self._model,
             messages=context,
-            tools=self.manager.tools if kwargs.get("tools") else None,
+            tools=kwargs.get("tools", None),
             stream=kwargs.get("stream", False)
         )
 
         return response
 
-    def send(self, role: str, content: str, stream=True, include_tools=True, add_to_context=True):
+    def build_context(self, system_prompt=True):
+        # context = system prompt + turn history
+        context = []
+
+        # always insert system prompt at start of context
+        if core.config.get("system_prompt") and system_prompt:
+            context = context+[{"role": "system", "content": core.config.get("system_prompt")}]
+
+        # insert turn history
+        context = context+self._turns
+
+        print(context)
+
+        return context
+
+    def send(self, role: str, content: str, system_prompt=True, stream=True, use_context=True, use_tools=True, add_turn=True, **kwargs):
         """send a message to the LLM. returns a chat completions response object"""
 
-        prompt = self._context+[{"role": role, "content": content}] # context plus current message
-        if add_to_context:
-        # response = self._AI.chat.completions.create(
-        #     model=self._model,
-        #     messages=self._context,
-        #     tools=self.manager.tools if include_tools else None,
-        #     stream=stream
-        # )
-            self.insert_context(role, content)
+        context = []
+        if use_context:
+            if add_turn:
+                self.insert_turn(role, content)
+            context = self.build_context(system_prompt=system_prompt)
+        else:
+            context = [{"role": role, "content": content}]
 
-        return self._request(prompt, tools=include_tools, stream=stream)
+        return self._request(context, tools=(self.manager.tools if use_tools else None), stream=stream, **kwargs)
 
-    async def recv(self, response, channel=None, use_tools=True):
+    async def recv(self, response, channel=None, add_turn=True, **kwargs):
         """takes a response object and extracts the message from it, handling tool calls if needed"""
 
         final_content = None
@@ -69,28 +86,27 @@ class OpenAIClient():
         final_content = response_main.message.content
 
         # handle tool calls, if any
-        if response_main.message.tool_calls and use_tools:
+        if response_main.message.tool_calls:
             final_content += await self._handle_tool_calls(response_main.message.tool_calls, channel)
 
         # add it to context
-        self.insert_context("assistant", final_content)
-        self.trim_context(core.config.get("max_context", 20))
+        if add_turn:
+            self.insert_turn("assistant", final_content)
 
         return final_content
 
-    async def recv_stream(self, response, channel=None, use_tools=True):
+    async def recv_stream(self, response, channel=None, use_tools=True, add_turn=True):
         """takes a response object and extracts the message from it, handling tool calls if needed. streaming version"""
-        final_content = ""
         final_tool_calls = []
-
-        chunks = []
         tool_call_buffer = {}
+        tokens = []
+
         for chunk in response:
             streamed_token = chunk.choices[0].delta
 
             # yield the current token in the stream
             if streamed_token.content:
-                chunks.append(streamed_token.content)
+                tokens.append(streamed_token.content)
                 yield streamed_token.content
 
             # extract tool calls, if any
@@ -110,10 +126,15 @@ class OpenAIClient():
 
             # handle tool calls, if any
             if final_tool_calls:
+                tokens.append("\n")
                 for word in await self._handle_tool_calls(final_tool_calls, channel):
+                    tokens.append(word)
                     yield word
 
-        self.trim_context(core.config.get("max_context", 20))
+        # add it to context
+        if add_turn:
+            final_content = "".join(tokens)
+            self.insert_turn("assistant", final_content)
 
     async def _handle_tool_calls(self, tool_calls, channel=None):
         results = []
@@ -144,18 +165,21 @@ class OpenAIClient():
                 core.log("toolcall", f"calling tool {tool_call.function.name}({arg_display})")
 
                 # call the class method
-                self._context.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
+                self._turns.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
                 try:
                     func_response = await func_callable(**arg_obj)
                     # and add the method's return value to the LLM's context window as a tool call response
-                    self._context.append({"role": "tool_response", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))})
+                    self._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))})
                 except Exception as e:
-                    self._context.append({"role": "tool_response", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"})
+                    self._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"})
+
+                self.trim_turns()
             else:
                 core.log("toolcall", f"tried to call tool {tool_call.function.name} but couldnt find it?!")
 
         return await self.recv(
-            self._request(self._context+[{"role": "system", "content": "tell user the results of the tool calls. look at tool_response"}]),
-            use_tools=False
+            self._request(self._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]),
+            use_tools=True,
+            add_turn=False
         )
 

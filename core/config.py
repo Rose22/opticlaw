@@ -2,6 +2,8 @@ import os
 import yaml
 import core
 
+# TODO: replace with better backend
+
 config = {}
 
 default_config = {
