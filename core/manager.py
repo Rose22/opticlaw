@@ -254,6 +254,13 @@ class Manager:
     async def handle_tool_calls(self, tool_calls, channel=None):
         results = []
 
+        # add toolcalls to context
+        tools_called = {
+            "role": "assistant",
+            "tool_calls": [tool_call.to_dict() for tool_call in tool_calls]
+        }
+        self.API._turns.append(tools_called)
+
         # call any tool calls based on the stored tool call function
         for tool_call in tool_calls:
             # does the method exist within any of the loaded classes?
@@ -280,13 +287,14 @@ class Manager:
                 core.log("toolcall", f"calling tool {tool_call.function.name}({arg_display})")
 
                 # call the class method
-                #self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
                 try:
                     func_response = await func_callable(**arg_obj)
                     # and add the method's return value to the LLM's context window as a tool call response
-                    self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))})
+                    tool_response = {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))}
                 except Exception as e:
-                    self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"})
+                    tool_response = {"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"}
+
+                self.API._turns.append(tool_response)
             else:
                 core.log("toolcall", f"tried to call tool {tool_call.function.name} but couldnt find it?!")
 

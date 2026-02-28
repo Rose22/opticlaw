@@ -14,12 +14,12 @@ class ToolTests(core.tool.Tool):
             await self.channel.announce("The AI has hugged you!")
         except Exception as e:
             core.log("error", e)
-        return True
+        return self.result(f"{target} hugged")
     async def punch(self, target: str):
         """punches the user"""
         await self.channel.announce("The AI has punched you. Ow!")
-        return True
+        return self.result(f"{target} punched")
     async def fetch_website(self, url: str):
         """fetches a website"""
         await self.channel.announce("fetched website")
-        return requests.get(url).text
+        return self.result(requests.get(url).text)
