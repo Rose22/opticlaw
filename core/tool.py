@@ -7,11 +7,6 @@ class Tool:
 
     def result(self, data, error=False):
         """unified way of returning tool results"""
-        print({
-            "status": "success" if not error else "error",
-            "content": data
-        })
-
         return {
             "status": "success" if not error else "error",
             "content": data
