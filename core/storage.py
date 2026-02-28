@@ -18,7 +18,7 @@ class Storage(list):
             self.load()
         else:
             with open(self.path, "wb") as f:
-                f.write(b'')
+                f.write(msgpack.packb([]))
 
     def save(self):
         """save content to file"""
