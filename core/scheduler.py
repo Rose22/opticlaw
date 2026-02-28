@@ -4,10 +4,9 @@ import datetime
 
 class Scheduler:
     def __init__(self):
-        self._tasks = core.storage.Storage("schedule")
+        self._tasks = []
 
     def add(self,
-            name: str,
             func,
             func_args: tuple = (),
             func_kwargs: dict = {},
@@ -21,7 +20,6 @@ class Scheduler:
         """add a task to the schedule. will call target function when the time has come."""
 
         self._tasks.append({
-            "name": name,
             "date_added": datetime.datetime.now(),
             "schedule": {"days": days, "hours": hours, "minutes": minutes, "seconds": seconds},
             "repeat": repeat,
@@ -30,7 +28,6 @@ class Scheduler:
             "func_kwargs": func_kwargs
         })
 
-        self._tasks.save()
         return True
 
     def delete(self, index):
@@ -55,7 +52,7 @@ class Scheduler:
                         self._tasks.remove(task)
                         # if the task is set to repeat, just re-add it
                         if task.get("repeat"):
-                            self.add(task.get("name"), func_to_call, func_args=task.get("func_args"), func_kwargs=task.get("func_kwargs"), **task.get("schedule"), repeat=task.get("repeat"))
+                            self.add(func_to_call, func_args=task.get("func_args"), func_kwargs=task.get("func_kwargs"), **task.get("schedule"), repeat=task.get("repeat"))
 
             # wait a few milliseconds per loop run.
             # ensures the program doesn't consume an insane amount of CPU

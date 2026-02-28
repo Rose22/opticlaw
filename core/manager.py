@@ -187,6 +187,10 @@ class Manager:
                 # skip private methods and other private properties
                 continue
 
+            if func_name == "result":
+                # builtin result function
+                continue
+
             try:
                 func_obj = getattr(toolclass, func_name)
             except:

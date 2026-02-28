@@ -64,7 +64,7 @@ class APIClient():
 
         return context
 
-    def send(self, role: str, content: str, system_prompt=True, stream=True, use_context=True, use_tools=True, add_turn=True, **kwargs):
+    def send(self, role: str, content: str, system_prompt=True, stream=True, use_context=True, use_tools=True, tools=None, add_turn=True, **kwargs):
         """send a message to the LLM. returns a chat completions response object"""
 
         context = []
@@ -75,8 +75,12 @@ class APIClient():
         else:
             context = [{"role": role, "content": content}]
 
+        # use default tools if not specified. allow overrides
+        if not tools:
+            tools = self.manager.tools
+
         try:
-            return self._request(context, tools=(self.manager.tools if use_tools else None), stream=stream, **kwargs)
+            return self._request(context, tools=(tools if use_tools else None), stream=stream, **kwargs)
         except Exception as e:
             core.log_error("error while sending request to AI", e)
             return None
