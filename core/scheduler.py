@@ -1,9 +1,10 @@
+import core
 import asyncio
 import datetime
 
 class Scheduler:
     def __init__(self):
-        self._tasks = []
+        self._tasks = core.storage.Storage("schedule")
 
     def add(self,
             name: str,
@@ -19,7 +20,7 @@ class Scheduler:
     ):
         """add a task to the schedule. will call target function when the time has come."""
 
-        return self._tasks.append({
+        self._tasks.append({
             "name": name,
             "date_added": datetime.datetime.now(),
             "schedule": {"days": days, "hours": hours, "minutes": minutes, "seconds": seconds},
@@ -28,6 +29,15 @@ class Scheduler:
             "func_args": func_args,
             "func_kwargs": func_kwargs
         })
+
+        self._tasks.save()
+        return True
+
+    def delete(self, index):
+        """removes a task from the schedule by index"""
+        if index <= len(self._tasks):
+            return self._tasks.pop(index)
+        return False
 
     async def run(self):
         """main loop"""

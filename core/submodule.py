@@ -42,7 +42,7 @@ def load(package, base_class):
                 discovered.append(attr)
 
         except ImportError as e:
-            log("warning", f"failed to import {modname}: {e}")
+            core.log("warning", f"failed to import {modname}: {e}")
             continue
 
     return tuple(discovered)

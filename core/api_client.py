@@ -24,13 +24,16 @@ class APIClient():
         self.trim_turns()
         return self._turns.append({"role": role, "content": content})
 
-    def trim_turns(self, max_turns: int = None):
+    def trim_turns(self, max_turns: int = None, max_tokens: int = None):
         """trims context to keep token consumption low"""
 
         if not max_turns:
             max_turns = core.config.get("max_turns", 20)
+        if not max_tokens:
+            # TODO: find a way to get max tokens. also count tokens instead of words
+            max_tokens = core.config.get("max_input_tokens", 16384)
 
-        while len(self._turns) > max_turns:
+        while len(self._turns) > max_turns or len(str(self._turns)) > max_tokens:
             self._turns.pop(0)
         return len(self._turns) <= max_turns
 
@@ -44,6 +47,8 @@ class APIClient():
             stream=kwargs.get("stream", False)
         )
 
+        #core.log("request", f"CONTEXT\n{context}\n\nKWARGS\n{kwargs}")
+
         return response
 
     def build_context(self, system_prompt=True):
@@ -51,8 +56,8 @@ class APIClient():
         context = []
 
         # always insert system prompt at start of context
-        if core.config.get("system_prompt") and system_prompt:
-            context = context+[{"role": "system", "content": core.config.get("system_prompt")}]
+        if system_prompt:
+            context = context+[{"role": "system", "content": self.manager.get_system_prompt()}]
 
         # insert turn history
         context = context+self._turns
@@ -70,7 +75,11 @@ class APIClient():
         else:
             context = [{"role": role, "content": content}]
 
-        return self._request(context, tools=(self.manager.tools if use_tools else None), stream=stream, **kwargs)
+        try:
+            return self._request(context, tools=(self.manager.tools if use_tools else None), stream=stream, **kwargs)
+        except Exception as e:
+            core.log_error("error while sending request to AI", e)
+            return None
 
     async def recv(self, response, channel=None, add_turn=True, **kwargs):
         """takes a response object and extracts the message from it, handling tool calls if needed"""
@@ -99,6 +108,9 @@ class APIClient():
         tool_call_buffer = {}
         tokens = []
 
+        if not response:
+            return
+
         for chunk in response:
             streamed_token = chunk.choices[0].delta
 
@@ -126,11 +138,13 @@ class APIClient():
             if final_tool_calls:
                 try:
                     tokens.append("\n")
-                    for word in await self.manager.handle_tool_calls(final_tool_calls, channel):
-                        tokens.append(word)
-                        yield word
+                    toolcall_results = await self.manager.handle_tool_calls(final_tool_calls, channel)
+                    if toolcall_results:
+                        for word in toolcall_results:
+                            tokens.append(word)
+                            yield word
                 except Exception as e:
-                    core.log("error", f"error while handling tool calls: {e}")
+                    core.log_error(f"error while handling tool calls", e)
 
         # add it to context
         if add_turn:

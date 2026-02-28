@@ -1,9 +1,13 @@
 import core
-import tools
+import os
+import sys
+import platform
+import datetime
 import asyncio
 import json
 import inspect
 import re
+import tools
 
 class Manager:
     """the central class that manages everything"""
@@ -15,6 +19,7 @@ class Manager:
         self.channels = {}
         self.tool_classes = []
         self.tools = []
+        self.memory = core.memory.Memory()
 
     def connect(self, *args, **kwargs):
         args = (self,)+args
@@ -23,6 +28,10 @@ class Manager:
         except Exception as e:
             core.log("error", f"error connecting to API: {e}")
             exit(1)
+
+        # Retrieve specific model details
+        #model_info = self.API._AI.models.retrieve(model_id)
+
         return self.API
 
     async def run(self):
@@ -52,6 +61,35 @@ class Manager:
 
         # run everything
         await asyncio.gather(*tasks)
+
+    def get_system_prompt(self):
+        system_prompt = core.config.get("system_prompt", "")
+
+        details = {
+            "current time": datetime.datetime.now().isoformat(),
+            "OS": sys.platform,
+            "OS release": platform.release(),
+            "platform": platform.platform(),
+            "architecture": platform.machine() if platform.machine() else "unknown",
+            "hostname": platform.node(),
+            "home dir": os.path.expanduser("~"),
+            "working directory": os.getcwd()
+        }
+
+        details_string = ""
+        for key, value in details.items():
+            details_string += f"{key}: {value}\n"
+
+        full_prompt = "\n".join([
+            "# Session context",
+            details_string,
+            "# Important memories",
+            self.memory.get_persistent_memories(),
+            "# Your identity",
+            system_prompt
+        ])
+
+        return full_prompt
 
     # --- tools ---
     def parse_tool_docstring(self, docstring):
@@ -238,20 +276,32 @@ class Manager:
                 core.log("toolcall", f"calling tool {tool_call.function.name}({arg_display})")
 
                 # call the class method
-                self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
+                #self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
                 try:
                     func_response = await func_callable(**arg_obj)
                     # and add the method's return value to the LLM's context window as a tool call response
                     self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))})
                 except Exception as e:
                     self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"})
-
-                self.API.trim_turns()
             else:
                 core.log("toolcall", f"tried to call tool {tool_call.function.name} but couldnt find it?!")
 
-        return await self.API.recv(
-            self.API._request(self.API._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]),
-            use_tools=True,
-            add_turn=False
-        )
+        # get user's last request from turns
+        user_last_turn = {}
+        for turn in self.API._turns:
+            if turn.get("role") == "user":
+                user_last_turn = turn
+
+        self.API.trim_turns()
+
+        prompt = self.API._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]
+
+        try:
+            return await self.API.recv(
+                self.API._request(prompt, tools=self.tools),
+                channel=channel,
+                use_tools=True,
+                add_turn=True
+            )
+        except Exception as e:
+            core.log_error(f"error while processing tool results", e)

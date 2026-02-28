@@ -1,4 +1,5 @@
 import core
+import requests
 
 class ToolTests(core.tool.Tool):
     name = "tests"
@@ -21,4 +22,4 @@ class ToolTests(core.tool.Tool):
     async def fetch_website(self, url: str):
         """fetches a website"""
         await self.channel.announce("fetched website")
-        return True
+        return requests.get(url).text
