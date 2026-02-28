@@ -235,3 +235,23 @@ class Manager:
                 for arg_name, arg_value in arg_obj.items():
                     arg_display.append(str(arg_value))
                 arg_display = ", ".join(arg_display)
+                core.log("toolcall", f"calling tool {tool_call.function.name}({arg_display})")
+
+                # call the class method
+                self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
+                try:
+                    func_response = await func_callable(**arg_obj)
+                    # and add the method's return value to the LLM's context window as a tool call response
+                    self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))})
+                except Exception as e:
+                    self.API._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"})
+
+                self.API.trim_turns()
+            else:
+                core.log("toolcall", f"tried to call tool {tool_call.function.name} but couldnt find it?!")
+
+        return await self.API.recv(
+            self.API._request(self.API._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]),
+            use_tools=True,
+            add_turn=False
+        )
