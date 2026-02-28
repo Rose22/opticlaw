@@ -23,6 +23,13 @@ class OpenAIClient():
 
         return self._context.append({"role": role, "content": content})
 
+    def trim_context(self, max_turns: int):
+        """trims context to keep token consumption low"""
+        if len(self._context) > max_turns:
+            self._context.pop(0)
+            return True
+        return False
+
     def _request(self, context, **kwargs):
         """send a request to the LLM and return the response object"""
 
@@ -40,15 +47,15 @@ class OpenAIClient():
 
         prompt = self._context+[{"role": role, "content": content}] # context plus current message
         if add_to_context:
-            self.insert_context(role, content)
-
-        return self._request(prompt, tools=include_tools, stream=stream)
         # response = self._AI.chat.completions.create(
         #     model=self._model,
         #     messages=self._context,
         #     tools=self.manager.tools if include_tools else None,
         #     stream=stream
         # )
+            self.insert_context(role, content)
+
+        return self._request(prompt, tools=include_tools, stream=stream)
 
     async def recv(self, response, channel=None, use_tools=True):
         """takes a response object and extracts the message from it, handling tool calls if needed"""
@@ -67,6 +74,7 @@ class OpenAIClient():
 
         # add it to context
         self.insert_context("assistant", final_content)
+        self.trim_context(core.config.get("max_context", 20))
 
         return final_content
 
@@ -104,6 +112,8 @@ class OpenAIClient():
             if final_tool_calls:
                 for word in await self._handle_tool_calls(final_tool_calls, channel):
                     yield word
+
+        self.trim_context(core.config.get("max_context", 20))
 
     async def _handle_tool_calls(self, tool_calls, channel=None):
         results = []

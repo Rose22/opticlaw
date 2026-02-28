@@ -1,4 +1,5 @@
 import core
+import tools
 import asyncio
 import inspect
 
@@ -15,7 +16,11 @@ class Manager:
 
     def connect(self, *args, **kwargs):
         args = (self,)+args
-        self.AI = core.openai_api.OpenAIClient(*args, **kwargs)
+        try:
+            self.AI = core.openai_api.OpenAIClient(*args, **kwargs)
+        except Exception as e:
+            core.log("error", f"error connecting to API: {e}")
+            exit(1)
         return self.AI
 
     async def run(self):
@@ -26,6 +31,7 @@ class Manager:
         tasks.append(asyncio.create_task(self.scheduler.run()))
 
         # load channels
+        core.log("init", "loading channels")
         import channels
         for channel in channels.get_all():
             chan = channel(self)
@@ -36,19 +42,23 @@ class Manager:
             tasks.append(asyncio.create_task(channel.run()))
             core.log("init", f"started channel {channel.name}")
 
+        core.log("init", "loading tools")
+        # load tools
+        for tool in tools.get_all():
+            self.add_tool_class(tool)
+        core.log("init", "loaded tools")
+
         # run everything
         await asyncio.gather(*tasks)
 
     # --- tools ---
-    def add_tool_class(self, toolclass, broadcaster=None):
+    def add_tool_class(self, toolclass):
         """
-        adds tools to the manager based on a class with functions
-        to make tools, just make a class like so:
-        class MyToolClass:
+        Adds tools to the manager based on a class with functions.
+        To make tools, just make a class like so:
+        class MyToolClass(core.tools.Tools):
             def search_web(query: str):
-                search_the_web_or_whatever(query)
-
-        you can also just pass a python module to this function!
+                self.channel.send(your_websearch(query))
         """
 
         self.tool_classes.append(toolclass)
@@ -116,5 +126,4 @@ class Manager:
                 },
             }
 
-            core.log("init", f"adding tool {func_name}")
             self.tools.append(tool)

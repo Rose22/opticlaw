@@ -3,8 +3,6 @@ import discord
 import asyncio
 import datetime
 
-TOKEN = core.config.config.get("discord_token")
-
 class Client(discord.Client):
     def __init__(self, channel, **kwargs):
         super(Client, self).__init__(**kwargs)
@@ -41,7 +39,7 @@ class Client(discord.Client):
             print(f"error: {e}")
 
     async def on_ready(self):
-        core.log("discord", "logged in to discord")
+        core.log("discord", "logged in")
 
     async def on_message(self, message):
         if message.author == self.user:
@@ -86,4 +84,15 @@ class ChannelDiscord(core.channel.Channel):
                     await channel.send(msg)
 
     async def run(self):
-        await self._client.start(TOKEN)
+        token = core.config.config.get("discord_token")
+
+        if not token:
+            core.log("error", "discord token not set! set it in config.yaml as discord_token")
+            return False
+
+        core.log("discord", "logging in..")
+
+        try:
+            await self._client.start(token)
+        except Exception as e:
+            core.log("error", f"error connecting to discord: {e}")

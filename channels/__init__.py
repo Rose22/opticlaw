@@ -1,8 +1,5 @@
-import asyncio
+import core
+import channels
 
 def get_all():
-    # temporary fix for now
-    import channels.chan_cli
-    import channels.chan_discord
-    #return (channels.chan_cli.ChannelCli,)
-    return (channels.chan_cli.ChannelCli, channels.chan_discord.ChannelDiscord)
+    return core.submodule.load(channels, core.channel.Channel)
