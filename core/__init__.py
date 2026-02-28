@@ -5,7 +5,7 @@ from core.functions import *
 
 import core.storage
 import core.config
-import core.openai_api
+import core.api_client
 import core.manager
 import core.channel
 import core.tool

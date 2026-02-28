@@ -4,7 +4,7 @@ import asyncio
 import json
 import inspect
 
-class OpenAIClient():
+class APIClient():
     """
     wrapper around the openAI API to make sending/receiving messages easier to work with
     """

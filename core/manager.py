@@ -19,7 +19,7 @@ class Manager:
     def connect(self, *args, **kwargs):
         args = (self,)+args
         try:
-            self.AI = core.openai_api.OpenAIClient(*args, **kwargs)
+            self.AI = core.api_client.APIClient(*args, **kwargs)
         except Exception as e:
             core.log("error", f"error connecting to API: {e}")
             exit(1)
