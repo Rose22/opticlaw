@@ -3,6 +3,10 @@ import asyncio
 import core
 
 class ToolScheduler(core.tool.Tool):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.schedule = core.storage.Storage("schedule")
+
     async def add_scheduled_item(self, title: str, instructions_to_ai: str, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0, recurring: bool = False):
         """
         adds a scheduled job to the scheduler. it will execute at a time from now in days, hours, minutes and seconds.

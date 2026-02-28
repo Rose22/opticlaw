@@ -1,6 +1,8 @@
 import core
 
 class ToolTests(core.tool.Tool):
+    name = "tests"
+
     async def hug(self, target: str):
         """
         hugs the user
