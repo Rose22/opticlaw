@@ -56,4 +56,4 @@ class Scheduler:
 
             # wait a few milliseconds per loop run.
             # ensures the program doesn't consume an insane amount of CPU
-            await asyncio.sleep(0.50)
+            await asyncio.sleep(0.10)
