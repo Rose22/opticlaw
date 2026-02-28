@@ -2,7 +2,11 @@ import core
 
 class ToolTests(core.tool.Tool):
     async def hug(self, target: str):
-        """hugs the user"""
+        """
+        hugs the user
+        Args:
+            target: the target of the hug
+        """
         try:
             await self.channel.announce("The AI has hugged you!")
         except Exception as e:

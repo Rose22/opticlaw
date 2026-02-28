@@ -7,9 +7,12 @@ class ToolScheduler(core.tool.Tool):
         """
         adds a scheduled job to the scheduler. it will execute at a time from now in days, hours, minutes and seconds.
 
-        example:
-            minutes: 1
-            instructions_to_ai: "i have to remind user to drink water now"
+        Args:
+            instructions_to_ai: instructions to the AI on what to do when the event triggers. example: "remind user to drink water"
+            days: days from now that the event should trigger
+            hours: hours from now that the event should trigger
+            minutes: minutes from now that the event should trigger
+            seconds: seconds from now that the event should trigger
         """
         async def scheduled_event(instructions: str):
             try:

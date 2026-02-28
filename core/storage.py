@@ -32,7 +32,7 @@ class Storage():
         with open(self.path, "rb") as f:
             try:
                 self.data = msgpack.unpackb(f.read())
-                return True
+                return self.data
             except Exception as e:
                 core.log("error", f"error loading {self.name}: {e}")
-                return False
+                return None

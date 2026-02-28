@@ -57,8 +57,6 @@ class OpenAIClient():
         # insert turn history
         context = context+self._turns
 
-        print(context)
-
         return context
 
     def send(self, role: str, content: str, system_prompt=True, stream=True, use_context=True, use_tools=True, add_turn=True, **kwargs):
@@ -87,7 +85,7 @@ class OpenAIClient():
 
         # handle tool calls, if any
         if response_main.message.tool_calls:
-            final_content += await self._handle_tool_calls(response_main.message.tool_calls, channel)
+            final_content += await self.manager.handle_tool_calls(response_main.message.tool_calls, channel)
 
         # add it to context
         if add_turn:
@@ -127,7 +125,7 @@ class OpenAIClient():
             # handle tool calls, if any
             if final_tool_calls:
                 tokens.append("\n")
-                for word in await self._handle_tool_calls(final_tool_calls, channel):
+                for word in await self.manager.handle_tool_calls(final_tool_calls, channel):
                     tokens.append(word)
                     yield word
 
@@ -135,51 +133,4 @@ class OpenAIClient():
         if add_turn:
             final_content = "".join(tokens)
             self.insert_turn("assistant", final_content)
-
-    async def _handle_tool_calls(self, tool_calls, channel=None):
-        results = []
-
-        # call any tool calls based on the stored tool call function
-        for tool_call in tool_calls:
-            # does the method exist within any of the loaded classes?
-            toolclass_instance = None
-            for class_obj in self.manager.tool_classes:
-                if hasattr(class_obj, tool_call.function.name):
-                    toolclass_instance = class_obj(self.manager)
-                    # store a reference to the channel used to send the message
-                    if channel:
-                        toolclass_instance.channel = channel
-                    else:
-                        core.log("warning", "channel was not used")
-
-            if toolclass_instance:
-                # get the class method object
-                func_callable = getattr(toolclass_instance, tool_call.function.name)
-
-                # format its arguments in a JSON format the llm will understand
-                arg_obj = json.loads(tool_call.function.arguments)
-                arg_display = []
-                for arg_name, arg_value in arg_obj.items():
-                    arg_display.append(str(arg_value))
-                arg_display = ", ".join(arg_display)
-                core.log("toolcall", f"calling tool {tool_call.function.name}({arg_display})")
-
-                # call the class method
-                self._turns.append({"role": "tool", "tool_call_id": tool_call.id, "arguments": tool_call.function.arguments, "content": ""})
-                try:
-                    func_response = await func_callable(**arg_obj)
-                    # and add the method's return value to the LLM's context window as a tool call response
-                    self._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))})
-                except Exception as e:
-                    self._turns.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"})
-
-                self.trim_turns()
-            else:
-                core.log("toolcall", f"tried to call tool {tool_call.function.name} but couldnt find it?!")
-
-        return await self.recv(
-            self._request(self._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]),
-            use_tools=True,
-            add_turn=False
-        )
 

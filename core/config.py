@@ -7,9 +7,11 @@ import core
 config = {}
 
 default_config = {
-    "api_base": "http://localhost:11434/v1",
+    "api_url": "http://localhost:11434/v1",
     "api_key": "KEY_HERE",
-    "model": "MODEL_HERE"
+    "model": "MODEL_HERE",
+    "max_turns": 20,
+    "system_prompt": "You are a helpful AI assistant"
 }
 
 config_path = core.get_path("config.yaml")
