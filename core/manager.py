@@ -10,7 +10,7 @@ class Manager:
 
     # --- main ---
     def __init__(self):
-        self.AI = None # connect later with .connect()
+        self.API = None # connect later with .connect()
         self.scheduler = core.scheduler.Scheduler()
         self.channels = {}
         self.tool_classes = []
@@ -19,11 +19,11 @@ class Manager:
     def connect(self, *args, **kwargs):
         args = (self,)+args
         try:
-            self.AI = core.api_client.APIClient(*args, **kwargs)
+            self.API = core.api_client.APIClient(*args, **kwargs)
         except Exception as e:
             core.log("error", f"error connecting to API: {e}")
             exit(1)
-        return self.AI
+        return self.API
 
     async def run(self):
         """main loop"""

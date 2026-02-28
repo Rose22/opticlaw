@@ -124,10 +124,13 @@ class APIClient():
 
             # handle tool calls, if any
             if final_tool_calls:
-                tokens.append("\n")
-                for word in await self.manager.handle_tool_calls(final_tool_calls, channel):
-                    tokens.append(word)
-                    yield word
+                try:
+                    tokens.append("\n")
+                    for word in await self.manager.handle_tool_calls(final_tool_calls, channel):
+                        tokens.append(word)
+                        yield word
+                except Exception as e:
+                    core.log("error", f"error while handling tool calls: {e}")
 
         # add it to context
         if add_turn:
