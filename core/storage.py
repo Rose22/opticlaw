@@ -6,8 +6,8 @@ DATADIR = "data"
 if not os.path.exists(DATADIR):
     os.mkdir(DATADIR)
 
-class Storage(dict):
-    """subclassed dict that handles storage of data, uses msgpack format for speed and small size"""
+class Storage(list):
+    """subclassed list that handles storage of data, uses msgpack format for speed and small size"""
     def __init__(self, file_path, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -35,7 +35,8 @@ class Storage(dict):
         """load content from file"""
         with open(self.path, "rb") as f:
             try:
-                self.update(msgpack.unpackb(f.read()))
+                self.clear()
+                self.extend(msgpack.unpackb(f.read()))
                 return self
             except Exception as e:
                 core.log("error", f"error loading {self.name}: {e}")
