@@ -226,6 +226,11 @@ class Manager:
 
             # dynamically load class methods from classes
             func_params = dict(inspect.signature(func_obj).parameters)
+
+            # only get class methods with a self parameter
+            if not func_params.get("self"):
+                continue
+
             # remove "self" arg from func
             del(func_params["self"])
 
@@ -243,6 +248,7 @@ class Manager:
                     "str": "string",
                     "int": "integer",
                     "list": "array",
+                    "dict": "object",
                     "bool": "boolean"
                     # TODO: support more types
                 }
@@ -262,7 +268,8 @@ class Manager:
                     "parameters": {
                         "type": "object",
                         "properties": func_params_translated,
-                        "required": [key for key in func_params.keys()],
+                        #"required": [key for key in func_params.keys()],
+                        "required": [],
                         "additionalProperties": False,
                     },
                     "strict": True,
@@ -304,7 +311,11 @@ class Manager:
                 for arg_name, arg_value in arg_obj.items():
                     arg_display.append(str(arg_value))
                 arg_display = ", ".join(arg_display)
-                core.log("toolcall", f"calling tool {tool_call.function.name}({arg_display})")
+                announce_string = f"calling tool {tool_call.function.name}({arg_display})"
+                if channel:
+                    await channel.announce(announce_string)
+                else:
+                    core.log("toolcall", announce_string)
 
                 # call the class method
                 try:
