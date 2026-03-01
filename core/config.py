@@ -11,7 +11,9 @@ default_config = {
     "api_key": "KEY_HERE",
     "model": "MODEL_HERE",
     "max_turns": 20,
-    "system_prompt": "You are a helpful AI assistant"
+    "system_prompt": "You are a helpful AI assistant",
+    "channels": ["cli"],
+    "tools": ["memory"]
 }
 
 config_path = core.get_path("config.yaml")

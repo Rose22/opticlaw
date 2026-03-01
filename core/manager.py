@@ -41,23 +41,36 @@ class Manager:
         # start scheduler
         tasks.append(asyncio.create_task(self.scheduler.run()))
 
+        # prepare CamelCase to snake_case conversion
+        re_snakecase = re.compile('(?!^)([A-Z]+)')
+
         # load channels
         core.log("init", "loading channels")
         import channels
         for channel in channels.get_all():
-            chan = channel(self)
-            self.channels[chan.name] = chan
+            # only load enabled channels
+            channel_name_snakecase = re.sub(re_snakecase, r'_\1', channel.__name__).lower()
+            channel_name_snakecase = channel_name_snakecase.replace("channel", "").strip("_")
+            if channel_name_snakecase in core.config.get("channels", []):
+                chan = channel(self)
+                self.channels[channel_name_snakecase] = chan
 
         # start channels
         for channel_name, channel in self.channels.items():
             tasks.append(asyncio.create_task(channel.run()))
-            core.log("init", f"started channel {channel.name}")
+            core.log("init", f"started channel {channel_name}")
 
         core.log("init", "loading tools")
+        loaded_tool_names = []
         # load tools
         for tool in tools.get_all():
-            self.add_tool_class(tool)
-        core.log("init", "loaded tools")
+            # only load enabled tools
+            tool_name_snakecase = re.sub(re_snakecase, r'_\1', tool.__name__).lower()
+            tool_name_snakecase = tool_name_snakecase.replace("tool", "").strip("_")
+            if tool_name_snakecase in core.config.get("tools", []):
+                self.add_tool_class(tool)
+                loaded_tool_names.append(tool_name_snakecase)
+        core.log("init", f"tools loaded: {', '.join(loaded_tool_names)}")
 
         # run everything
         await asyncio.gather(*tasks)
