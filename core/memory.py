@@ -1,5 +1,6 @@
 import core
 import datetime
+import re
 
 class Memory(core.storage.Storage):
     """manages the AI's memory"""
@@ -41,7 +42,7 @@ class Memory(core.storage.Storage):
         self.append(new_mem)
         self.save()
 
-        return self.result(f"id: {highest_id}")
+        return id
 
     def edit(self, id: int, content: str, persistent: bool = None):
         """edits a memory"""
