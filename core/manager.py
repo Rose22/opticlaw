@@ -5,6 +5,7 @@ import platform
 import datetime
 import asyncio
 import json
+import json_repair
 import inspect
 import re
 import tools
@@ -306,7 +307,7 @@ class Manager:
                 func_callable = getattr(toolclass_instance, tool_call.function.name)
 
                 # format its arguments in a JSON format the llm will understand
-                arg_obj = json.loads(tool_call.function.arguments)
+                arg_obj = json_repair.loads(tool_call.function.arguments)
                 arg_display = []
                 for arg_name, arg_value in arg_obj.items():
                     arg_display.append(str(arg_value))
