@@ -19,7 +19,7 @@ class Manager:
         self.channels = {}
         self.tool_classes = []
         self.tools = []
-        self.memory = core.memory.Memory()
+        self.memory = core.memory.Memory("memory")
 
     def connect(self, *args, **kwargs):
         args = (self,)+args
@@ -79,14 +79,21 @@ class Manager:
         details_string = ""
         for key, value in details.items():
             details_string += f"{key}: {value}\n"
+        details_string = details_string.strip()
 
-        full_prompt = "\n".join([
-            "# Session context",
-            details_string,
-            "# Important memories",
-            self.memory.get_persistent_memories(),
-            "# Your identity",
-            system_prompt
+        # automatically put persistent memories in the prompt
+        persistent_memories = []
+        for mem in self.memory.get_persistent().copy():
+            filtered_mem = {
+                "id": mem.get("id"),
+                "content": mem.get("content")
+            }
+            persistent_memories.append(filtered_mem)
+
+        full_prompt = "\n\n".join([
+            f"# Session context\n{details_string}",
+            f"# Important memories\n{persistent_memories}",
+            f"# Your identity\n{system_prompt}"
         ])
 
         return full_prompt
@@ -292,6 +299,7 @@ class Manager:
                     # and add the method's return value to the LLM's context window as a tool call response
                     tool_response = {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(str(func_response))}
                 except Exception as e:
+                    core.log("toolcall", f"error: {str(e)}")
                     tool_response = {"role": "tool", "tool_call_id": tool_call.id, "content": f"error: {str(e)}"}
 
                 self.API._turns.append(tool_response)

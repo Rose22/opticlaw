@@ -16,7 +16,7 @@ async def schedule_callback(tool, instructions: str):
 
     await tool.channel.announce(message)
 
-class ToolScheduler(core.tool.Tool):
+class SchedulerTool(core.tool.Tool):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._schedule = core.storage.Storage("schedule")

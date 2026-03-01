@@ -1,4 +1,7 @@
 import core
+import os
+import sys
+import time
 
 class Channel:
     """Base class for channels"""
@@ -7,13 +10,50 @@ class Channel:
         self.name = self.__class__.__name__
         self.manager = manager
 
+    async def _process_input(self, message: str):
+        """processes user input and detects special commands that control opticlaw"""
+        message = message.strip().lower()
+        cmd_prefix = core.config.get("cmd_prefix", "/")
+        if not message.startswith(cmd_prefix):
+            return None
+
+        cmd = message.split(cmd_prefix)[1].split()
+
+        match cmd[0]:
+            case "new":
+                self.manager.API._turns = []
+                return "New session started."
+            case "help":
+                return """
+/new            start a new session (clears context window)
+/stop           stops a running task
+/restart        restarts the server
+/help           this help
+""".strip()
+            case "restart":
+                await self.announce("restarting..")
+                time.sleep(0.5)
+                os.execv(sys.argv[0], sys.argv)
+            case "stop":
+                return "Not implemented yet"
+
     async def send(self, role: str, message: str, **kwargs):
         """sends a message to the AI from within the current channel"""
+        cmd_process = await self._process_input(message)
+        if cmd_process:
+            return cmd_process
+
         response = self.manager.API.send(role, message, stream=False, **kwargs)
         return await self.manager.API.recv(response, self, **kwargs)
 
     async def send_stream(self, role: str, message: str, **kwargs):
         """sends a message to the AI from within the current channel, streaming version"""
+        cmd_process = await self._process_input(message)
+        if cmd_process:
+            for word in cmd_process:
+                yield word
+            return
+
         response = self.manager.API.send(role, message, stream=True, **kwargs)
         async for token in self.manager.API.recv_stream(response, self, **kwargs):
             yield token

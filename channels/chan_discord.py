@@ -55,11 +55,17 @@ class Client(discord.Client):
                     mentioned = True
 
             if mentioned:
-                core.log("discord", f"<{message.author.name}> {message.content}")
+                core.log("discord", f"<{message.author.name}> {message.clean_content}")
 
                 async with message.channel.typing():
                     try:
-                        response_obj = self.ai_channel.send_stream("user", message.content)
+                        content = message.content
+                        # remove mentions from message before sending
+                        for mention in message.raw_mentions:
+                           content = content.replace(str(mention), "") 
+                           content = content.replace("<@>", "")
+
+                        response_obj = self.ai_channel.send_stream("user", content)
                     except Exception as e:
                         return await message.channel.send(f"error while sending request to AI: {e}")
 
@@ -78,6 +84,9 @@ class ChannelDiscord(core.channel.Channel):
         self._client = Client(self, intents=intents)
 
     async def announce(self, msg: str):
+        if not msg:
+            return None
+
         for guild in self._client.guilds:
             for channel in guild.channels:
                 if isinstance(channel, discord.TextChannel) and channel.permissions_for(guild.me).view_channel:
