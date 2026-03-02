@@ -49,9 +49,6 @@ class Channel:
                 return "not implemented yet"
             case "disable":
                 return "not implemented yet"
-            case "debug":
-                await self.announce_all("piiiinggg!")
-                return "sent a debug announcement to all channels!"
             case "restart":
                 await self.announce_all("restarting..")
                 time.sleep(0.5)
