@@ -10,6 +10,19 @@ class Channel:
     def __init__(self, manager):
         self.name = self.__class__.__name__
         self.manager = manager
+        self._help = """
+/new            start a new session (clears context window)
+/models         list available models
+/model          switch model
+/modules        list modules
+/module         enable/disable a module by name
+/tools          list tools
+/sysprompt      show current system prompt
+/stop           stops a running task
+/restart        restarts the server
+/help           this help
+""".strip()
+
 
     async def _process_input(self, message: str):
         """processes user input and detects special commands that control opticlaw"""
@@ -25,25 +38,20 @@ class Channel:
                 self.manager.API._turns = []
                 return "New session started."
             case "help":
-                return """
-/new            start a new session (clears context window)
-/models         list available models
-/model          switch model
-/modules        list modules
-/module         enable/disable a module by name
-/tools          list tools
-/sysprompt      show current system prompt
-/stop           stops a running task
-/restart        restarts the server
-/help           this help
-""".strip()
+                return self._help
             case "models":
                 return "not implemented yet"
             case "model":
                 return "not implemented yet"
             case "modules":
                 # TODO: also get disabled modules
-                return "\n".join(self.manager.modules.keys())
+                modules_str = "\n".join(core.config.get("modules"))
+                modules_disabled_str = "\n".join(core.config.get("modules_disabled"))
+                modules_loaded_str = "\n".join(self.manager.modules.keys())
+
+                return f"Loaded:\n{modules_loaded_str}\n\nDisabled in config:\n{modules_disabled_str}\n"
+            case "module":
+                return "not implemented yet"
             case "tools":
                 tool_list = []
                 for tool in self.manager.tools:
@@ -64,6 +72,8 @@ class Channel:
                 os.execv(sys.argv[0], sys.argv)
             case "stop":
                 return "Not implemented yet"
+            case _:
+                return self._help
 
     async def send(self, role: str, message: str, **kwargs):
         """sends a message to the AI from within the current channel"""

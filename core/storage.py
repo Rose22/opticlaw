@@ -75,7 +75,7 @@ class StorageList(list):
 
         match self.type:
             case "json":
-                self._write(json.dumps(self))
+                self._write(json.dumps(self, indent=2))
             case "yaml":
                 self._write(yaml.dump(self))
             case "msgpack":
@@ -172,7 +172,7 @@ class StorageDict(dict):
 
         match self.type:
             case "json":
-                self._write(json.dumps(dict(self)))
+                self._write(json.dumps(dict(self), indent=2))
             case "yaml":
                 self._write(yaml.dump(dict(self)))
             case "msgpack":

@@ -27,7 +27,6 @@ class Scheduler(core.module.Module):
         # load from stored schedule
         if self._schedule:
             for index, item in enumerate(self._schedule):
-                item["id"] = index
                 self.manager.scheduler.add(schedule_callback, func_args=(self, item.get("action")), days=item.get("days"), hours=item.get("hours"), minutes=item.get("minutes"), seconds=item.get("seconds"), repeat=item.get("recurring"))
 
     async def on_system_prompt(self):
@@ -41,7 +40,7 @@ class Scheduler(core.module.Module):
             if job.get("recurring"):
                 time_due_list = []
                 for key in job.keys():
-                    if key in ("action", "recurring", "id"):
+                    if key in ("action", "recurring"):
                         continue
                 
                     if int(job[key]) > 0:

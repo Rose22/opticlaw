@@ -1,8 +1,8 @@
 import os
 import yaml
 import core
-
-# TODO: replace with better backend
+import modules
+import channels
 
 config = core.storage.StorageDict("config", "yaml")
 
@@ -11,10 +11,22 @@ default_config = {
     "api_key": "KEY_HERE",
     "model": "MODEL_HERE",
     "channels": ["cli"],
+    "channels_disabled": [],
     "modules": ["identity", "memory", "scheduler"],
+    "modules_disabled": [],
     "max_turns": 20,
-    "context_window": "on"
+    "context_window": True
 }
+
+for channel in channels.get_all(respect_config=False):
+    channel_name = core.module.get_name(channel)
+    if channel_name != "cli":
+        default_config["channels_disabled"].append(channel_name)
+
+for module in modules.get_all(respect_config=False):
+    module_name = core.module.get_name(module)
+    if module_name not in ("identity", "memory", "scheduler"):
+        default_config["modules_disabled"].append(module_name)
 
 if not config:
     config.load(default_config)

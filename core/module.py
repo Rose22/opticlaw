@@ -1,3 +1,4 @@
+import core
 import re
 import inspect
 
@@ -23,7 +24,7 @@ class Module:
         """overridable method that runs when first loading the module"""
         return None
 
-def load(package, base_class):
+def load(package, base_class, respect_config: bool = True):
     """
     Dynamically discovers classes in a package.
 
@@ -60,6 +61,11 @@ def load(package, base_class):
                     if attr is base_class:
                         continue
                     if not issubclass(attr, base_class):
+                        continue
+
+                # only load enabled modules into memory
+                if respect_config:
+                    if get_name(attr) not in core.config.get("modules", [])+core.config.get("channels", []):
                         continue
 
                 discovered.append(attr)
