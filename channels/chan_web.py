@@ -3,11 +3,15 @@ OptiClaw WebUI - A modern chat interface for AI interactions.
 
 This module provides a Flask-based web interface with:
 - Real-time streaming responses
-- Multiple theme support (24 themes)
+- Multiple theme support (12 themes)
 - PWA support for mobile installation
 - Connection monitoring and auto-reconnection
-- File upload capabilities
+- File upload capabilities (button + drag & drop)
 - Markdown rendering with syntax highlighting
+- Message editing, deletion, search, and export
+- Keyboard shortcuts and accessibility features
+- Virtual scrolling for performance
+- CSRF and CSP security headers
 """
 
 import asyncio
@@ -16,7 +20,8 @@ import logging
 import uuid
 import base64
 import socket
-from flask import Flask, render_template_string, request, jsonify, Response, cli
+import secrets
+from flask import Flask, render_template_string, request, jsonify, Response, cli, session
 from threading import Thread
 from queue import Queue
 
@@ -27,6 +32,7 @@ import core
 # ==============================================================================
 
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(32)
 
 # Disable Flask's default server banner and werkzeug logging for cleaner output
 cli.show_server_banner = lambda *args: print(end="")
@@ -41,10 +47,33 @@ channel_instance = None
 stream_cancellations = set()
 
 # ==============================================================================
+# Security Headers
+# ==============================================================================
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    # Content Security Policy - allow inline scripts/styles and CDN resources
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+    response.headers['Content-Security-Policy'] = csp
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+# ==============================================================================
 # HTML/CSS/JavaScript Template
 # ==============================================================================
 
-HTML_TEMPLATE = '''
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,6 +83,7 @@ HTML_TEMPLATE = '''
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="OptiClaw">
+    <meta name="description" content="AI Chat Interface">
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/icon-192.png">
     <title>OptiClaw</title>
@@ -129,6 +159,25 @@ HTML_TEMPLATE = '''
             -moz-osx-font-smoothing: grayscale;
         }
 
+        /* Skip link for accessibility */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            padding: 8px 16px;
+            background: var(--accent);
+            color: var(--bg-primary);
+            z-index: 1000;
+            text-decoration: none;
+            font-weight: 600;
+            border-radius: 0 0 var(--radius-md) 0;
+            transition: top 0.2s;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
         /* ==========================================================================
            App Container
            ========================================================================== */
@@ -140,6 +189,37 @@ HTML_TEMPLATE = '''
             margin: 0 auto;
             background: var(--bg-secondary);
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Drag and drop overlay */
+        .drop-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            pointer-events: none;
+        }
+
+        .drop-overlay.active {
+            display: flex;
+        }
+
+        .drop-overlay-content {
+            background: var(--bg-tertiary);
+            border: 2px dashed var(--accent);
+            border-radius: var(--radius-lg);
+            padding: 40px 60px;
+            text-align: center;
+        }
+
+        .drop-overlay-content svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            color: var(--accent);
         }
 
         /* ==========================================================================
@@ -228,9 +308,48 @@ HTML_TEMPLATE = '''
         }
 
         /* ==========================================================================
-           Settings Modal
+           Search Bar
            ========================================================================== */
-        .settings-overlay {
+        .search-container {
+            display: none;
+            padding: 12px 16px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .search-container.active {
+            display: flex;
+            gap: 8px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-full);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .search-count {
+            padding: 10px 16px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-full);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* ==========================================================================
+           Modals (Settings, Export, etc.)
+           ========================================================================== */
+        .modal-overlay {
             position: fixed;
             inset: 0;
             background: rgba(0, 0, 0, 0.7);
@@ -241,12 +360,12 @@ HTML_TEMPLATE = '''
             backdrop-filter: blur(4px);
         }
 
-        .settings-overlay.show {
+        .modal-overlay.show {
             opacity: 1;
             visibility: visible;
         }
 
-        .settings-modal {
+        .modal {
             position: fixed;
             top: 50%;
             left: 50%;
@@ -260,18 +379,18 @@ HTML_TEMPLATE = '''
             overflow-y: auto;
             opacity: 0;
             visibility: hidden;
-            transition: all 0.2s ease;
+            transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
             z-index: 1001;
             box-shadow: var(--shadow-soft);
         }
 
-        .settings-modal.show {
+        .modal.show {
             opacity: 1;
             visibility: visible;
             transform: translate(-50%, -50%) scale(1);
         }
 
-        .settings-header {
+        .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -279,12 +398,12 @@ HTML_TEMPLATE = '''
             border-bottom: 1px solid var(--border-color);
         }
 
-        .settings-header h2 {
+        .modal-header h2 {
             font-size: 1.2rem;
             color: var(--text-primary);
         }
 
-        .settings-close {
+        .modal-close {
             background: none;
             border: none;
             font-size: 1.5rem;
@@ -296,16 +415,16 @@ HTML_TEMPLATE = '''
             line-height: 1;
         }
 
-        .settings-close:hover {
+        .modal-close:hover {
             background: var(--bg-tertiary);
             color: var(--text-primary);
         }
 
-        .settings-content {
+        .modal-content {
             padding: 16px 20px;
         }
 
-        .settings-content h3 {
+        .modal-content h3 {
             font-size: 0.85rem;
             color: var(--text-secondary);
             margin-bottom: 12px;
@@ -313,6 +432,7 @@ HTML_TEMPLATE = '''
             letter-spacing: 0.5px;
         }
 
+        /* Theme grid */
         .theme-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
@@ -348,6 +468,40 @@ HTML_TEMPLATE = '''
             margin-bottom: 6px;
         }
 
+        /* Export options */
+        .export-options {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .export-btn {
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+        }
+
+        .export-btn:hover {
+            border-color: var(--accent);
+            background: var(--bg-secondary);
+        }
+
+        .export-btn-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .export-btn-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
         /* ==========================================================================
            Chat Container & Messages
            ========================================================================== */
@@ -361,6 +515,13 @@ HTML_TEMPLATE = '''
             background: var(--bg-primary);
         }
 
+        /* Drag over state */
+        .chat-container.drag-over {
+            background: linear-gradient(var(--bg-primary), var(--bg-primary)) padding-box,
+                        linear-gradient(90deg, var(--accent) 50%, transparent 50%) border-box;
+            border: 2px dashed var(--accent);
+        }
+
         .message {
             max-width: 85%;
             padding: 12px 16px;
@@ -368,15 +529,64 @@ HTML_TEMPLATE = '''
             line-height: 1.6;
             word-wrap: break-word;
             animation: slideIn 0.2s ease-out;
+            position: relative;
         }
 
         .message.hidden {
             display: none;
         }
 
+        .message.search-highlight {
+            background: var(--important-bg) !important;
+        }
+
+        .message.search-highlight mark {
+            background: var(--accent);
+            color: var(--bg-primary);
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
+
         @keyframes slideIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Message actions */
+        .message-actions {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .message:hover .message-actions {
+            opacity: 1;
+        }
+
+        .message-action-btn {
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .message-action-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--accent);
+        }
+
+        .message-action-btn.delete:hover {
+            border-color: var(--error);
+            color: var(--error);
         }
 
         /* User messages */
@@ -450,9 +660,15 @@ HTML_TEMPLATE = '''
             opacity: 0.8;
         }
 
-        .message.user .timestamp { text-align: right; }
-        .message.ai .timestamp { text-align: left; }
-        .message.announce .timestamp { text-align: center; }
+        .message .timestamp-left { text-align: left; }
+        .message .timestamp-right { text-align: right; }
+        .message .timestamp-center { text-align: center; }
+
+        .message .edit-indicator {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-left: 6px;
+        }
 
         /* Code blocks */
         .message pre {
@@ -551,6 +767,48 @@ HTML_TEMPLATE = '''
             border: none;
             border-top: 1px solid var(--border-color);
             margin: 12px 0;
+        }
+
+        /* Edit textarea */
+        .edit-textarea {
+            width: 100%;
+            min-height: 60px;
+            background: var(--bg-primary);
+            border: 1px solid var(--accent);
+            border-radius: var(--radius-md);
+            padding: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: inherit;
+            resize: vertical;
+            outline: none;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            justify-content: flex-end;
+        }
+
+        .edit-actions button {
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .edit-save {
+            background: var(--accent);
+            border: none;
+            color: var(--bg-primary);
+        }
+
+        .edit-cancel {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
         }
 
         /* Typing indicator */
@@ -713,6 +971,46 @@ HTML_TEMPLATE = '''
         }
 
         /* ==========================================================================
+           Keyboard Shortcuts Modal
+           ========================================================================== */
+        .shortcuts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .shortcut-item:last-child {
+            border-bottom: none;
+        }
+
+        .shortcut-keys {
+            display: flex;
+            gap: 4px;
+        }
+
+        .shortcut-key {
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+
+        .shortcut-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ==========================================================================
            Responsive Styles
            ========================================================================== */
         @media (max-width: 600px) {
@@ -721,6 +1019,7 @@ HTML_TEMPLATE = '''
             .header-btn { padding: 6px 10px; font-size: 0.8rem; }
             .chat-container { padding: 12px; }
             .message { max-width: 90%; padding: 10px 14px; }
+            .message-actions { opacity: 1; }
             .input-area { padding: 12px; gap: 8px; }
             #upload { padding: 12px; }
             #message { padding: 12px 16px; }
@@ -735,60 +1034,207 @@ HTML_TEMPLATE = '''
             .message { padding: 8px 12px; font-size: 0.95rem; }
             #send, #stop { padding: 12px 14px; font-size: 0.9rem; }
         }
+
+        /* Focus visible for accessibility */
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        /* Screen reader only */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
     </style>
 </head>
 <body>
+    <a href="#message" class="skip-link">Skip to input</a>
+    
+    <div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+        <div class="drop-overlay-content">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            <div style="font-size: 1.2rem; font-weight: 600;">Drop file to upload</div>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Header -->
         <header>
             <div class="header-left">
-                <div class="status-dot" id="status"></div>
+                <div class="status-dot" id="status" role="status" aria-label="Connection status"></div>
                 <h1>AI Chat</h1>
             </div>
             <div class="header-right">
-                <button class="header-btn" id="settings-btn" onclick="toggleSettings()" title="Settings">
+                <button class="header-btn" id="search-btn" onclick="toggleSearch()" title="Search messages (Ctrl+F)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                </button>
+                <button class="header-btn" id="settings-btn" onclick="toggleModal('settings')" title="Settings (Ctrl+S)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
-                <button class="header-btn" onclick="clearChat()" title="Clear chat history">
-                    Clear
+                <button class="header-btn" onclick="showExportModal()" title="Export chat">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7,10 12,15 17,10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
                 </button>
+                <button class="header-btn" onclick="showShortcutsModal()" title="Keyboard shortcuts (?)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+                        <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M6 16h12"></path>
+                    </svg>
+                </button>
+                <button class="header-btn" onclick="clearChat()" title="Clear chat">Clear</button>
             </div>
         </header>
 
+        <!-- Search Bar -->
+        <div class="search-container" id="search-container">
+            <input type="text" class="search-input" id="search-input" placeholder="Search messages..." oninput="performSearch(this.value)">
+            <div class="search-count" id="search-count">0 results</div>
+            <button class="header-btn" onclick="clearSearch()">✕</button>
+        </div>
+
         <!-- Settings Modal -->
-        <div class="settings-overlay" id="settings-overlay" onclick="closeSettings(event)"></div>
-        <div class="settings-modal" id="settings-modal">
-            <div class="settings-header">
-                <h2>Settings</h2>
-                <button class="settings-close" onclick="toggleSettings()">×</button>
+        <div class="modal-overlay" id="settings-overlay" onclick="closeModalOnOverlay(event, 'settings')"></div>
+        <div class="modal" id="settings-modal" role="dialog" aria-labelledby="settings-title">
+            <div class="modal-header">
+                <h2 id="settings-title">Settings</h2>
+                <button class="modal-close" onclick="toggleModal('settings')" aria-label="Close settings">×</button>
             </div>
-            <div class="settings-content">
+            <div class="modal-content">
                 <h3>Theme</h3>
                 <div class="theme-grid" id="theme-grid"></div>
             </div>
         </div>
 
+        <!-- Export Modal -->
+        <div class="modal-overlay" id="export-overlay" onclick="closeModalOnOverlay(event, 'export')"></div>
+        <div class="modal" id="export-modal" role="dialog" aria-labelledby="export-title">
+            <div class="modal-header">
+                <h2 id="export-title">Export Chat</h2>
+                <button class="modal-close" onclick="toggleModal('export')" aria-label="Close export">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="export-options">
+                    <button class="export-btn" onclick="exportChat('json')">
+                        <div class="export-btn-title">JSON</div>
+                        <div class="export-btn-desc">Full chat data with metadata</div>
+                    </button>
+                    <button class="export-btn" onclick="exportChat('markdown')">
+                        <div class="export-btn-title">Markdown</div>
+                        <div class="export-btn-desc">Formatted for reading and sharing</div>
+                    </button>
+                    <button class="export-btn" onclick="exportChat('txt')">
+                        <div class="export-btn-title">Plain Text</div>
+                        <div class="export-btn-desc">Simple text format</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Shortcuts Modal -->
+        <div class="modal-overlay" id="shortcuts-overlay" onclick="closeModalOnOverlay(event, 'shortcuts')"></div>
+        <div class="modal" id="shortcuts-modal" role="dialog" aria-labelledby="shortcuts-title">
+            <div class="modal-header">
+                <h2 id="shortcuts-title">Keyboard Shortcuts</h2>
+                <button class="modal-close" onclick="toggleModal('shortcuts')" aria-label="Close shortcuts">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="shortcuts-list">
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Send message</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Ctrl</span>
+                            <span class="shortcut-key">Enter</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">New line</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Shift</span>
+                            <span class="shortcut-key">Enter</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Clear chat</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Ctrl</span>
+                            <span class="shortcut-key">L</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Settings</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Ctrl</span>
+                            <span class="shortcut-key">S</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Search</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Ctrl</span>
+                            <span class="shortcut-key">F</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Export</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Ctrl</span>
+                            <span class="shortcut-key">E</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Stop generation</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Escape</span>
+                        </div>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="shortcut-desc">Show shortcuts</span>
+                        <div class="shortcut-keys">
+                            <span class="shortcut-key">Ctrl</span>
+                            <span class="shortcut-key">/</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Chat Container -->
-        <div class="chat-container" id="chat">
-            <div class="typing-indicator" id="typing">
+        <div class="chat-container" id="chat" role="log" aria-live="polite" aria-label="Chat messages">
+            <div class="typing-indicator" id="typing" aria-label="AI is typing">
                 <span></span><span></span><span></span>
             </div>
         </div>
 
         <!-- Input Area -->
         <div class="input-area">
-            <button id="upload" onclick="document.getElementById('file-input').click()" title="Upload file">
+            <button id="upload" onclick="document.getElementById('file-input').click()" title="Upload file" aria-label="Upload file">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                 </svg>
             </button>
-            <input type="file" id="file-input" onchange="handleFileUpload(event)">
-            <textarea id="message" placeholder="Type a message..." onkeydown="handleKeyDown(event)" rows="1"></textarea>
-            <button id="send" onclick="send()">Send</button>
-            <button id="stop" onclick="stopGeneration()">Stop</button>
+            <input type="file" id="file-input" onchange="handleFileUpload(event)" aria-hidden="true">
+            <textarea id="message" placeholder="Type a message..." onkeydown="handleKeyDown(event)" rows="1" aria-label="Message input"></textarea>
+            <button id="send" onclick="send()" aria-label="Send message">Send</button>
+            <button id="stop" onclick="stopGeneration()" aria-label="Stop generation">Stop</button>
         </div>
     </div>
 
@@ -796,14 +1242,14 @@ HTML_TEMPLATE = '''
     // =============================================================================
     // State Management
     // =============================================================================
-
+    
     // Connection state
     let isConnected = false;
     let reconnectAttempts = 0;
     let reconnectTimer = null;
     let hasShownReconnecting = false;
     let reconnectingMsgEl = null;
-
+    
     // Message state
     let lastAnnouncementId = 0;
     let isStreaming = false;
@@ -811,7 +1257,13 @@ HTML_TEMPLATE = '''
     let currentController = null;
     let currentStreamId = null;
     let conversationHistory = [];
-
+    let editingIndex = null;
+    
+    // Search state
+    let searchQuery = '';
+    let searchResults = [];
+    let currentSearchIndex = -1;
+    
     // DOM references
     const chat = document.getElementById('chat');
     const typing = document.getElementById('typing');
@@ -819,44 +1271,72 @@ HTML_TEMPLATE = '''
     const sendBtn = document.getElementById('send');
     const stopBtn = document.getElementById('stop');
     const statusDot = document.getElementById('status');
-
+    const dropOverlay = document.getElementById('drop-overlay');
+    
     // =============================================================================
     // Configuration
     // =============================================================================
-
+    
     const CONFIG = {
         RECONNECT_BASE_DELAY: 1000,
         RECONNECT_MAX_DELAY: 30000,
         RECONNECT_DELAY_FACTOR: 1.5,
         CONNECTION_TIMEOUT: 3000,
         POLL_INTERVAL: 500,
-        POLL_TIMEOUT: 5000
+        POLL_TIMEOUT: 5000,
+        VIRTUAL_SCROLL_BUFFER: 10,
+        MESSAGE_HEIGHT_ESTIMATE: 100
     };
-
+    
+    // =============================================================================
+    // Virtual Scrolling
+    // =============================================================================
+    
+    const VirtualScroller = {
+        visibleStart: 0,
+        visibleEnd: 20,
+        
+        updateRange() {
+            const scrollTop = chat.scrollTop;
+            const viewportHeight = chat.clientHeight;
+            
+            this.visibleStart = Math.max(0, Math.floor(scrollTop / CONFIG.MESSAGE_HEIGHT_ESTIMATE) - CONFIG.VIRTUAL_SCROLL_BUFFER);
+            this.visibleEnd = Math.min(
+                conversationHistory.length,
+                Math.ceil((scrollTop + viewportHeight) / CONFIG.MESSAGE_HEIGHT_ESTIMATE) + CONFIG.VIRTUAL_SCROLL_BUFFER
+            );
+        },
+        
+        isMessageVisible(index) {
+            return index >= this.visibleStart && index <= this.visibleEnd;
+        }
+    };
+    
     // =============================================================================
     // Markdown Rendering
     // =============================================================================
-
+    
     marked.setOptions({
         breaks: true,
         gfm: true
     });
-
+    
     function renderMarkdown(text) {
         return marked.parse(text);
     }
-
+    
     function highlightCode(element) {
         if (typeof hljs === 'undefined') return;
-
+        
         element.querySelectorAll('pre code').forEach((block) => {
             hljs.highlightElement(block);
-
+            
             const pre = block.parentElement;
             if (!pre.querySelector('.copy-btn')) {
                 const btn = document.createElement('button');
                 btn.className = 'copy-btn';
                 btn.textContent = 'Copy';
+                btn.setAttribute('aria-label', 'Copy code');
                 btn.onclick = () => {
                     navigator.clipboard.writeText(block.textContent).then(() => {
                         btn.textContent = 'Copied!';
@@ -872,22 +1352,22 @@ HTML_TEMPLATE = '''
             }
         });
     }
-
+    
     // =============================================================================
     // History Management
     // =============================================================================
-
+    
     function saveHistory() {
         localStorage.setItem('chatHistory', JSON.stringify(conversationHistory));
     }
-
+    
     function loadHistory() {
         const saved = localStorage.getItem('chatHistory');
         if (saved) {
             try {
                 conversationHistory = JSON.parse(saved);
-                conversationHistory.forEach(msg => {
-                    createMessageElement(msg.role, msg.content, msg.timestamp);
+                conversationHistory.forEach((msg, index) => {
+                    createMessageElement(msg.role, msg.content, msg.timestamp, msg.edited, index);
                 });
             } catch (e) {
                 console.error('Failed to load history:', e);
@@ -895,30 +1375,32 @@ HTML_TEMPLATE = '''
             }
         }
     }
-
+    
     function clearChatUI() {
         conversationHistory = [];
         saveHistory();
         const messages = chat.querySelectorAll('.message');
         messages.forEach(msg => msg.remove());
         currentAiMsg = null;
+        editingIndex = null;
+        clearSearch();
     }
-
+    
     // =============================================================================
     // Utility Functions
     // =============================================================================
-
+    
     function formatTime(date) {
         if (date) return date;
         return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
-
+    
     function scrollToBottom() {
         requestAnimationFrame(() => {
             chat.scrollTop = chat.scrollHeight;
         });
     }
-
+    
     function scrollToBottomDelayed() {
         setTimeout(() => {
             requestAnimationFrame(() => {
@@ -926,7 +1408,7 @@ HTML_TEMPLATE = '''
             });
         }, 10);
     }
-
+    
     function autoResize(textarea) {
         if (!textarea.value) {
             textarea.style.height = '48px';
@@ -935,19 +1417,20 @@ HTML_TEMPLATE = '''
             textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
         }
     }
-
+    
     function clearInput() {
         inputField.value = '';
         autoResize(inputField);
     }
-
+    
     // =============================================================================
     // Connection Management
     // =============================================================================
-
+    
     function updateConnectionStatus(status) {
         statusDot.className = 'status-dot ' + status;
-
+        statusDot.setAttribute('aria-label', 'Connection status: ' + status);
+        
         if (status === 'disconnected') {
             sendBtn.disabled = true;
         } else if (status === 'connected') {
@@ -955,7 +1438,7 @@ HTML_TEMPLATE = '''
             reconnectAttempts = 0;
         }
     }
-
+    
     function removeReconnectingMessage() {
         if (reconnectingMsgEl) {
             reconnectingMsgEl.remove();
@@ -963,22 +1446,22 @@ HTML_TEMPLATE = '''
         }
         hasShownReconnecting = false;
     }
-
+    
     async function checkConnection() {
         try {
             const response = await fetch('/poll?id=' + lastAnnouncementId, {
                 method: 'GET',
                 signal: AbortSignal.timeout(CONFIG.CONNECTION_TIMEOUT)
             });
-
+            
             if (response.ok) {
                 const wasReconnecting = hasShownReconnecting && !isConnected;
-
+                
                 if (!isConnected) {
                     isConnected = true;
                     updateConnectionStatus('connected');
                     removeReconnectingMessage();
-
+                    
                     if (wasReconnecting || reconnectAttempts > 0) {
                         addAnnouncement('Reconnected to server', 'info');
                     }
@@ -990,31 +1473,31 @@ HTML_TEMPLATE = '''
             handleConnectionError();
         }
     }
-
+    
     function handleConnectionError() {
         const wasConnected = isConnected;
-
+        
         if (isConnected) {
             isConnected = false;
             updateConnectionStatus('disconnected');
             removeReconnectingMessage();
             addAnnouncement('Disconnected from server. Reconnecting...', 'info');
         }
-
+        
         scheduleReconnect();
     }
-
+    
     function scheduleReconnect() {
         if (reconnectTimer) clearTimeout(reconnectTimer);
-
+        
         reconnectAttempts++;
         const delay = Math.min(
             CONFIG.RECONNECT_BASE_DELAY * Math.pow(CONFIG.RECONNECT_DELAY_FACTOR, Math.min(reconnectAttempts, 10)),
             CONFIG.RECONNECT_MAX_DELAY
         );
-
+        
         updateConnectionStatus('connecting');
-
+        
         if (!hasShownReconnecting) {
             hasShownReconnecting = true;
             reconnectingMsgEl = addAnnouncement('Reconnecting...', 'info');
@@ -1022,7 +1505,7 @@ HTML_TEMPLATE = '''
                 reconnectingMsgEl.classList.add('reconnecting');
             }
         }
-
+        
         reconnectTimer = setTimeout(async () => {
             await checkConnection();
             if (!isConnected) {
@@ -1030,59 +1513,110 @@ HTML_TEMPLATE = '''
             }
         }, delay);
     }
-
+    
     // =============================================================================
     // Message Creation
     // =============================================================================
-
-    function createMessageElement(role, content, timestamp) {
+    
+    function createMessageElement(role, content, timestamp, edited = false, index = null) {
         const div = document.createElement('div');
         div.className = 'message ' + role;
+        div.setAttribute('role', 'article');
+        
+        if (index !== null) {
+            div.dataset.index = index;
+        }
+        
         const timeStr = timestamp || formatTime();
-
+        
         if (role === 'ai' || role === 'user') {
             div.innerHTML = renderMarkdown(content);
             highlightCode(div);
         } else {
             div.innerText = content;
         }
-
+        
         const ts = document.createElement('span');
         ts.className = 'timestamp';
         ts.textContent = timeStr;
+        
+        if (edited) {
+            const editIndicator = document.createElement('span');
+            editIndicator.className = 'edit-indicator';
+            editIndicator.textContent = '(edited)';
+            ts.appendChild(editIndicator);
+        }
+        
         div.appendChild(ts);
-
+        
+        // Add action buttons for user and AI messages
+        if (role === 'user' || role === 'ai') {
+            const actions = document.createElement('div');
+            actions.className = 'message-actions';
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'message-action-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.setAttribute('aria-label', 'Copy message');
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(content).then(() => {
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+                });
+            };
+            actions.appendChild(copyBtn);
+            
+            if (role === 'user') {
+                const editBtn = document.createElement('button');
+                editBtn.className = 'message-action-btn';
+                editBtn.textContent = 'Edit';
+                editBtn.setAttribute('aria-label', 'Edit message');
+                editBtn.onclick = () => editMessage(index);
+                actions.appendChild(editBtn);
+            }
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'message-action-btn delete';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.setAttribute('aria-label', 'Delete message and all following');
+            deleteBtn.onclick = () => deleteMessage(index);
+            actions.appendChild(deleteBtn);
+            
+            div.appendChild(actions);
+        }
+        
         chat.insertBefore(div, typing);
         scrollToBottomDelayed();
         return div;
     }
-
+    
     function addMessage(role, content, withTimestamp = true, timestamp = null) {
         const timeStr = timestamp || formatTime();
         const msg = { role: role, content: content, timestamp: timeStr };
-
+        const index = conversationHistory.length;
+        
         if (isStreaming && currentAiMsg && role === 'announce') {
             conversationHistory.push(msg);
             saveHistory();
-            chat.insertBefore(createMessageElement(role, content, timeStr), currentAiMsg);
+            chat.insertBefore(createMessageElement(role, content, timeStr, false, index), currentAiMsg);
         } else {
             if (role !== 'announce') {
                 conversationHistory.push(msg);
                 saveHistory();
             }
-            createMessageElement(role, content, timeStr);
+            createMessageElement(role, content, timeStr, false, index);
         }
         scrollToBottom();
     }
-
+    
     function addAnnouncement(content, type = null) {
         const div = document.createElement('div');
         div.className = 'message announce';
         if (type) div.classList.add(type);
-
+        
         const timeStr = formatTime();
         div.innerHTML = content + '<span class="timestamp">' + timeStr + '</span>';
-
+        
         if (isStreaming && currentAiMsg) {
             chat.insertBefore(div, currentAiMsg);
         } else {
@@ -1091,44 +1625,794 @@ HTML_TEMPLATE = '''
         scrollToBottom();
         return div;
     }
+    
+// =============================================================================
+// Message Editing & Deletion - Map frontend indices to backend indices
+// =============================================================================
 
+/**
+ * Map a frontend conversationHistory index to a backend _turns index.
+ * Returns -1 if the message doesn't exist in the backend (announcement, command, etc.)
+ * 
+ * KEY INSIGHT: The backend uses 'assistant' for AI messages, but the frontend uses 'ai'.
+ * Also, commands (/help, /new, etc.) and announcements are never added to _turns.
+ * 
+ * _turns is populated ONLY by:
+ *   - insert_turn("user", content) for user messages (not commands)
+ *   - insert_turn("assistant", content) for AI responses (including stopped ones)
+ * 
+ * _turns is NOT populated by:
+ *   - Commands (caught by Channel._process_input() which returns early)
+ *   - Command responses (returned by _process_input, never goes through API)
+ *   - Announcements (from manager.channel.announce(), never goes through API)
+ */
+function frontendToBackendIndex(frontendIndex) {
+    let backendIndex = 0;
+
+    for (let i = 0; i < conversationHistory.length; i++) {
+        const msg = conversationHistory[i];
+        const content = msg.content || '';
+
+        // User messages that aren't commands go to the AI
+        if (msg.role === 'user' && !content.startsWith('/')) {
+            if (i === frontendIndex) return backendIndex;
+            backendIndex++;
+        }
+        // AI messages go to the AI (frontend uses 'ai', backend uses 'assistant')
+        // Stopped/cancelled messages are also added to _turns
+        else if (msg.role === 'ai' || msg.role === 'assistant') {
+            if (i === frontendIndex) return backendIndex;
+            backendIndex++;
+        }
+        // Everything else doesn't go to the AI:
+        // - Commands (role='user' but content starts with '/')
+        // - Command responses (role='command')
+        // - Announcements (role='announce')
+        // - Upload notifications (role='announce')
+        // Don't increment backendIndex for these
+    }
+
+    return -1;
+}
+
+/**
+ * Get the last backend index for a given frontend index.
+ * When deleting from frontend index N, we need to know how many backend
+ * messages exist after that point to delete correctly.
+ */
+function getBackendIndexRangeFromFrontend(frontendFromIndex, frontendToIndex) {
+    let startBackendIndex = -1;
+    let endBackendIndex = -1;
+    let backendIndex = 0;
+
+    for (let i = 0; i < conversationHistory.length; i++) {
+        const msg = conversationHistory[i];
+        const content = msg.content || '';
+
+        let isBackendMessage = false;
+
+        if (msg.role === 'user' && !content.startsWith('/')) {
+            isBackendMessage = true;
+        } else if (msg.role === 'ai' || msg.role === 'assistant') {
+            isBackendMessage = true;
+        }
+
+        if (isBackendMessage) {
+            if (i === frontendFromIndex) {
+                startBackendIndex = backendIndex;
+            }
+            if (i === frontendToIndex) {
+                endBackendIndex = backendIndex;
+            }
+            backendIndex++;
+        }
+    }
+
+    return { start: startBackendIndex, end: endBackendIndex };
+}
+
+/**
+ * Delete from backend at the given index (removes index and everything after).
+ */
+async function deleteFromBackendIndex(backendIndex) {
+    if (backendIndex < 0) return { success: false, reason: 'invalid_index' };
+
+    try {
+        const response = await fetch('/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: backendIndex })
+        });
+        const data = await response.json();
+        console.log('Backend delete result:', data);
+        return data;
+    } catch (e) {
+        console.error('Failed to delete from backend:', e);
+        return { success: false, reason: 'network_error' };
+    }
+}
+
+/**
+ * Edit a message in the backend at a specific index.
+ */
+async function editAtBackendIndex(backendIndex, newContent) {
+    if (backendIndex < 0) return { success: false, reason: 'invalid_index' };
+
+    try {
+        const response = await fetch('/edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: backendIndex, content: newContent })
+        });
+        const data = await response.json();
+        console.log('Backend edit result:', data);
+        return data;
+    } catch (e) {
+        console.error('Failed to edit in backend:', e);
+        return { success: false, reason: 'network_error' };
+    }
+}
+
+/**
+ * Sync the entire conversation history with the backend.
+ * This is a nuclear option - rebuilds _turns from scratch.
+ * Use when indices get out of sync.
+ */
+async function syncFullBackendContext() {
+    const messagesToSync = [];
+
+    for (const msg of conversationHistory) {
+        const content = msg.content || '';
+
+        // Only include messages that go to the AI
+        if (msg.role === 'user' && !content.startsWith('/')) {
+            messagesToSync.push({
+                role: 'user',
+                content: content
+            });
+        } else if (msg.role === 'ai' || msg.role === 'assistant') {
+            // Clean up stopped/cancelled markers for backend
+            let cleanContent = content;
+            if (cleanContent.endsWith(' [Stopped]')) {
+                cleanContent = cleanContent.slice(0, -10);
+            } else if (cleanContent.endsWith(' [Cancelled]')) {
+                cleanContent = cleanContent.slice(0, -12);
+            } else if (cleanContent === '[Stopped]' || cleanContent === '[Cancelled]') {
+                cleanContent = '';
+            }
+            if (cleanContent) {
+                messagesToSync.push({
+                    role: 'assistant',
+                    content: cleanContent
+                });
+            }
+        }
+        // Skip commands, announcements, etc.
+    }
+
+    console.log('Syncing', messagesToSync.length, 'messages to backend');
+
+    try {
+        const response = await fetch('/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: messagesToSync })
+        });
+        const data = await response.json();
+        console.log('Sync result:', data);
+        return data.success;
+    } catch (e) {
+        console.error('Failed to sync backend:', e);
+        return false;
+    }
+}
+
+function editMessage(index) {
+    if (editingIndex !== null) {
+        cancelEdit();
+    }
+
+    const msg = conversationHistory[index];
+    if (!msg) return;
+
+    // Can only edit user messages (not commands)
+    if (msg.role !== 'user') {
+        addAnnouncement('Can only edit your own messages', 'error');
+        return;
+    }
+
+    if ((msg.content || '').startsWith('/')) {
+        addAnnouncement('Cannot edit command messages', 'error');
+        return;
+    }
+
+    editingIndex = index;
+
+    const messageEl = chat.querySelector('[data-index="' + index + '"]');
+    if (!messageEl) return;
+
+    const originalContent = msg.content || '';
+
+    const editContainer = document.createElement('div');
+    editContainer.className = 'edit-container';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'edit-textarea';
+    textarea.value = originalContent;
+    textarea.setAttribute('aria-label', 'Edit message');
+
+    const actions = document.createElement('div');
+    actions.className = 'edit-actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'edit-save';
+    saveBtn.textContent = 'Save';
+    saveBtn.onclick = () => saveEdit(index, textarea.value);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'edit-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = cancelEdit;
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveBtn);
+
+    editContainer.appendChild(textarea);
+    editContainer.appendChild(actions);
+
+    messageEl.innerHTML = '';
+    messageEl.appendChild(editContainer);
+
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    textarea.onkeydown = (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            saveEdit(index, textarea.value);
+        }
+        if (e.key === 'Escape') {
+            cancelEdit();
+        }
+    };
+}
+
+async function saveEdit(index, newContent) {
+    newContent = (newContent || '').trim();
+    if (!newContent) {
+        cancelEdit();
+        return;
+    }
+
+    const msg = conversationHistory[index];
+    if (!msg) {
+        cancelEdit();
+        return;
+    }
+
+    // Update local history
+    conversationHistory[index].content = newContent;
+    conversationHistory[index].edited = true;
+    saveHistory();
+
+    // Find corresponding backend index and update there too
+    const backendIndex = frontendToBackendIndex(index);
+    console.log('Editing frontend index', index, '-> backend index', backendIndex, 'content:', newContent.substring(0, 50));
+
+    if (backendIndex >= 0) {
+        const result = await editAtBackendIndex(backendIndex, newContent);
+        if (!result.success) {
+            console.error('Backend edit failed, attempting full sync');
+            await syncFullBackendContext();
+        }
+    }
+
+    editingIndex = null;
+    reRenderMessagesFrom(index);
+}
+
+function cancelEdit() {
+    if (editingIndex === null) return;
+
+    const index = editingIndex;
+    editingIndex = null;
+
+    reRenderMessagesFrom(index);
+}
+
+async function deleteMessage(index) {
+    if (index === null || index === undefined) return;
+
+    const msg = conversationHistory[index];
+    if (!msg) return;
+
+    const backendIndex = frontendToBackendIndex(index);
+    console.log('Deleting frontend index', index, '-> backend index', backendIndex);
+    console.log('Message role:', msg.role, 'content:', (msg.content || '').substring(0, 50));
+
+    // Determine confirmation message based on message type
+    let confirmMsg = 'Delete this message?';
+    if (backendIndex >= 0) {
+        confirmMsg = "Delete this message and all messages after it? This will affect the AI's memory of the conversation.";
+    } else {
+        confirmMsg = 'Delete this message?';
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    // Store old state for debugging
+    const oldHistory = [...conversationHistory];
+    console.log('Before delete - Frontend history length:', conversationHistory.length);
+
+    // Delete from frontend
+    if (backendIndex >= 0) {
+        // This message exists in backend - delete from this index onwards in both
+
+        // Delete from frontend (from index onwards)
+        conversationHistory = conversationHistory.slice(0, index);
+
+        // Delete from backend at the corresponding index
+        const result = await deleteFromBackendIndex(backendIndex);
+
+        if (!result.success) {
+            console.error('Backend delete failed, attempting full sync');
+            // Restore frontend state and do a full sync
+            conversationHistory = oldHistory;
+            await syncFullBackendContext();
+            // Now try the frontend delete again
+            conversationHistory = conversationHistory.slice(0, index);
+        }
+    } else {
+        // This message doesn't exist in backend (announcement, command, etc.)
+        // Just remove it from frontend
+        conversationHistory.splice(index, 1);
+    }
+
+    console.log('After delete - Frontend history length:', conversationHistory.length);
+
+    saveHistory();
+    reRenderAllMessages();
+}
+
+    function reRenderMessagesFrom(startIndex) {
+        const messages = chat.querySelectorAll('.message');
+        
+        // Remove messages from startIndex onwards
+        messages.forEach(msg => {
+            const idx = parseInt(msg.dataset.index);
+            if (idx >= startIndex) {
+                msg.remove();
+            }
+        });
+        
+        // Re-render messages from startIndex
+        for (let i = startIndex; i < conversationHistory.length; i++) {
+            const msg = conversationHistory[i];
+            createMessageElement(msg.role, msg.content, msg.timestamp, msg.edited, i);
+        }
+        
+        scrollToBottom();
+    }
+    
+    function reRenderAllMessages() {
+        // Remove all messages
+        const messages = chat.querySelectorAll('.message');
+        messages.forEach(msg => msg.remove());
+        
+        // Re-render all
+        conversationHistory.forEach((msg, index) => {
+            createMessageElement(msg.role, msg.content, msg.timestamp, msg.edited, index);
+        });
+        
+        scrollToBottom();
+    }
+    
+    // =============================================================================
+    // Search
+    // =============================================================================
+    
+    function toggleSearch() {
+        const container = document.getElementById('search-container');
+        const input = document.getElementById('search-input');
+        
+        if (container.classList.contains('active')) {
+            clearSearch();
+        } else {
+            container.classList.add('active');
+            input.focus();
+        }
+    }
+    
+    function clearSearch() {
+        const container = document.getElementById('search-container');
+        const input = document.getElementById('search-input');
+        const count = document.getElementById('search-count');
+        
+        container.classList.remove('active');
+        input.value = '';
+        count.textContent = '0 results';
+        searchQuery = '';
+        searchResults = [];
+        currentSearchIndex = -1;
+        
+        // Remove highlights
+        document.querySelectorAll('.message').forEach(msg => {
+            msg.classList.remove('search-highlight');
+            // Restore original content by re-rendering
+            const index = parseInt(msg.dataset.index);
+            if (!isNaN(index) && conversationHistory[index]) {
+                const msgData = conversationHistory[index];
+                if (msgData.role === 'ai' || msgData.role === 'user') {
+                    msg.innerHTML = renderMarkdown(msgData.content);
+                    highlightCode(msg);
+                    
+                    // Re-add timestamp and actions
+                    const ts = document.createElement('span');
+                    ts.className = 'timestamp';
+                    ts.textContent = msgData.timestamp;
+                    if (msgData.edited) {
+                        const editIndicator = document.createElement('span');
+                        editIndicator.className = 'edit-indicator';
+                        editIndicator.textContent = '(edited)';
+                        ts.appendChild(editIndicator);
+                    }
+                    msg.appendChild(ts);
+                    
+                    // Re-add actions
+                    const actions = document.createElement('div');
+                    actions.className = 'message-actions';
+                    
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'message-action-btn';
+                    copyBtn.textContent = 'Copy';
+                    copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(msgData.content).then(() => {
+                            copyBtn.textContent = 'Copied!';
+                            setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+                        });
+                    };
+                    actions.appendChild(copyBtn);
+                    
+                    if (msgData.role === 'user') {
+                        const editBtn = document.createElement('button');
+                        editBtn.className = 'message-action-btn';
+                        editBtn.textContent = 'Edit';
+                        editBtn.onclick = () => editMessage(index);
+                        actions.appendChild(editBtn);
+                    }
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'message-action-btn delete';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.onclick = () => deleteMessage(index);
+                    actions.appendChild(deleteBtn);
+                    
+                    msg.appendChild(actions);
+                }
+            }
+        });
+    }
+    
+    function performSearch(query) {
+        searchQuery = query.toLowerCase();
+        if (!searchQuery) {
+            document.getElementById('search-count').textContent = '0 results';
+            return;
+        }
+        
+        searchResults = [];
+        
+        conversationHistory.forEach((msg, index) => {
+            if (msg.content.toLowerCase().includes(searchQuery)) {
+                searchResults.push(index);
+            }
+        });
+        
+        document.getElementById('search-count').textContent = searchResults.length + ' result' + (searchResults.length !== 1 ? 's' : '');
+        
+        // Highlight results
+        searchResults.forEach(index => {
+            const msgEl = chat.querySelector('[data-index="' + index + '"]');
+            if (msgEl && conversationHistory[index]) {
+                const msgData = conversationHistory[index];
+                
+                if (msgData.role === 'ai' || msgData.role === 'user') {
+                    // Escape the query for regex
+                    const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+                    const regex = new RegExp('(' + escapedQuery + ')', 'gi');
+                    
+                    let highlightedContent = msgData.content.replace(regex, '<mark>$1</mark>');
+                    msgEl.innerHTML = renderMarkdown(highlightedContent);
+                    highlightCode(msgEl);
+                    
+                    msgEl.classList.add('search-highlight');
+                    
+                    // Re-add timestamp and actions
+                    const ts = document.createElement('span');
+                    ts.className = 'timestamp';
+                    ts.textContent = msgData.timestamp;
+                    if (msgData.edited) {
+                        const editIndicator = document.createElement('span');
+                        editIndicator.className = 'edit-indicator';
+                        editIndicator.textContent = '(edited)';
+                        ts.appendChild(editIndicator);
+                    }
+                    msgEl.appendChild(ts);
+                    
+                    const actions = document.createElement('div');
+                    actions.className = 'message-actions';
+                    
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'message-action-btn';
+                    copyBtn.textContent = 'Copy';
+                    copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(msgData.content).then(() => {
+                            copyBtn.textContent = 'Copied!';
+                            setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+                        });
+                    };
+                    actions.appendChild(copyBtn);
+                    
+                    if (msgData.role === 'user') {
+                        const editBtn = document.createElement('button');
+                        editBtn.className = 'message-action-btn';
+                        editBtn.textContent = 'Edit';
+                        editBtn.onclick = () => editMessage(index);
+                        actions.appendChild(editBtn);
+                    }
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'message-action-btn delete';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.onclick = () => deleteMessage(index);
+                    actions.appendChild(deleteBtn);
+                    
+                    msgEl.appendChild(actions);
+                }
+            }
+        });
+        
+        // Scroll to first result
+        if (searchResults.length > 0) {
+            const firstResult = chat.querySelector('[data-index="' + searchResults[0] + '"]');
+            if (firstResult) {
+                firstResult.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+    
+    // =============================================================================
+    // Export
+    // =============================================================================
+    
+    function showExportModal() {
+        toggleModal('export');
+    }
+    
+    function exportChat(format) {
+        let content, filename, mimeType;
+        
+        if (format === 'json') {
+            content = JSON.stringify(conversationHistory, null, 2);
+            filename = 'chat-export.json';
+            mimeType = 'application/json';
+        } else if (format === 'markdown') {
+            let md = '# Chat Export\\n\\n';
+            md += 'Exported on ' + new Date().toLocaleString() + '\\n\\n---\\n\\n';
+            
+            conversationHistory.forEach(msg => {
+                const role = msg.role.charAt(0).toUpperCase() + msg.role.slice(1);
+                md += '**' + role + '** (' + msg.timestamp + '):\\n\\n';
+                md += msg.content + '\\n\\n---\\n\\n';
+            });
+            
+            content = md;
+            filename = 'chat-export.md';
+            mimeType = 'text/markdown';
+        } else { // txt
+            let txt = '';
+            txt += 'Chat Export\\n';
+            txt += 'Exported on ' + new Date().toLocaleString() + '\\n';
+            txt += '================================\\n\\n';
+            
+            conversationHistory.forEach(msg => {
+                const role = msg.role.charAt(0).toUpperCase() + msg.role.slice(1);
+                txt += '[' + msg.timestamp + '] ' + role + ':\\n';
+                txt += msg.content + '\\n\\n';
+            });
+            
+            content = txt;
+            filename = 'chat-export.txt';
+            mimeType = 'text/plain';
+        }
+        
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toggleModal('export');
+    }
+    
+    // =============================================================================
+    // Modal Management
+    // =============================================================================
+    
+    function toggleModal(modalName) {
+        const overlay = document.getElementById(modalName + '-overlay');
+        const modal = document.getElementById(modalName + '-modal');
+        
+        overlay.classList.toggle('show');
+        modal.classList.toggle('show');
+        
+        // Focus management for accessibility
+        if (modal.classList.contains('show')) {
+            modal.querySelector('button, input, [tabindex]:not([tabindex="-1"])')?.focus();
+        }
+    }
+    
+    function closeModalOnOverlay(event, modalName) {
+        if (event.target.id === modalName + '-overlay') {
+            toggleModal(modalName);
+        }
+    }
+    
+    function showShortcutsModal() {
+        toggleModal('shortcuts');
+    }
+    
     // =============================================================================
     // Input Handling
     // =============================================================================
-
+    
     function setInputState(disabled, showTyping = false, showStop = false) {
         inputField.disabled = false;
         sendBtn.disabled = disabled;
         statusDot.classList.toggle('inactive', disabled);
-
+        
         typing.classList.toggle('show', showTyping);
         sendBtn.classList.toggle('hidden', showStop);
         stopBtn.classList.toggle('show', showStop);
     }
-
+    
     function handleKeyDown(event) {
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
+        
+        // Keyboard shortcuts
+        if (event.ctrlKey || event.metaKey) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                send();
+                return;
+            }
+            if (event.key === 'l' || event.key === 'L') {
+                event.preventDefault();
+                clearChat();
+                return;
+            }
+            if (event.key === 's' || event.key === 'S') {
+                event.preventDefault();
+                toggleModal('settings');
+                return;
+            }
+            if (event.key === 'f' || event.key === 'F') {
+                event.preventDefault();
+                toggleSearch();
+                return;
+            }
+            if (event.key === 'e' || event.key === 'E') {
+                event.preventDefault();
+                showExportModal();
+                return;
+            }
+            if (event.key === '/') {
+                showShortcutsModal();
+                return;
+            }
+        }
+        
+        if (event.key === 'Escape') {
+            if (isStreaming) {
+                stopGeneration();
+            }
+            // Close any open modal
+            document.querySelectorAll('.modal.show').forEach(modal => {
+                const modalName = modal.id.replace('-modal', '');
+                toggleModal(modalName);
+            });
+            // Clear search
+            if (document.getElementById('search-container').classList.contains('active')) {
+                clearSearch();
+            }
+            return;
+        }
+        
+        // Mobile: Enter always adds newline, desktop: Enter sends, Shift+Enter newline
         if (!isMobile && event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             send();
         }
     }
-
+    
     // Auto-resize input on input event
     document.getElementById('message').addEventListener('input', function() {
         autoResize(this);
     });
-
+    
+    // =============================================================================
+    // Drag and Drop File Upload
+    // =============================================================================
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        chat.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        chat.addEventListener(eventName, () => {
+            chat.classList.add('drag-over');
+            dropOverlay.classList.add('active');
+        }, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        chat.addEventListener(eventName, () => {
+            chat.classList.remove('drag-over');
+            dropOverlay.classList.remove('active');
+        }, false);
+    });
+    
+    chat.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0) {
+            handleFileUpload({ target: { files: files } });
+        }
+    }, false);
+    
+    // Also handle drops on the entire page
+    document.body.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropOverlay.classList.add('active');
+    });
+    
+    document.body.addEventListener('dragleave', (e) => {
+        if (e.target === document.body || !e.relatedTarget) {
+            dropOverlay.classList.remove('active');
+        }
+    });
+    
+    document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropOverlay.classList.remove('active');
+        
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0) {
+            handleFileUpload({ target: { files: files } });
+        }
+    });
+    
     // =============================================================================
     // Command Handling
     // =============================================================================
-
+    
     async function sendCommand(cmd) {
         if (isStreaming) {
             await stopGeneration();
         }
-
+        
         if (cmd.startsWith("/new")) {
             clearChatUI();
         }
@@ -1136,26 +2420,26 @@ HTML_TEMPLATE = '''
             await stopGeneration();
             return;
         }
-
+        
         const timestamp = formatTime();
         conversationHistory.push({ role: 'user', content: cmd, timestamp: timestamp });
         saveHistory();
-        createMessageElement('user', cmd, timestamp);
-
+        createMessageElement('user', cmd, timestamp, false, conversationHistory.length - 1);
+        
         try {
             const response = await fetch('/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: cmd })
             });
-
+            
             const data = await response.json();
             if (data.response) {
                 const ts = formatTime();
                 const msg = { role: 'command', content: data.response, timestamp: ts };
                 conversationHistory.push(msg);
                 saveHistory();
-                createMessageElement('command', data.response, ts);
+                createMessageElement('command', data.response, ts, false, conversationHistory.length - 1);
             }
         } catch (err) {
             if (cmd.startsWith("/restart")) {
@@ -1163,51 +2447,55 @@ HTML_TEMPLATE = '''
                 const timestamp = formatTime();
                 conversationHistory.push({ role: 'command', content: "restarting server", timestamp: timestamp });
                 saveHistory();
-                createMessageElement('command', "restarting server..", timestamp);
+                createMessageElement('command', "restarting server..", timestamp, false, conversationHistory.length - 1);
                 return;
             }
             addMessage('announce', 'Error: ' + err.message);
         }
         inputField.focus();
     }
-
+    
     // =============================================================================
     // Main Send Function
     // =============================================================================
-
+    
     async function send() {
         if (!isConnected) {
             addAnnouncement('Cannot send message - not connected to server', 'error');
             return;
         }
-
+        
         const message = inputField.value.trim();
         if (!message) return;
-
+        
         if (message.startsWith('/')) {
             clearInput();
             await sendCommand(message);
             return;
         }
         if (isStreaming) return;
-
+        
         clearInput();
         const timestamp = formatTime();
-        addMessage('user', message);
-
+        const index = conversationHistory.length;
+        conversationHistory.push({ role: 'user', content: message, timestamp: timestamp });
+        saveHistory();
+        createMessageElement('user', message, timestamp, false, index);
+        
         setInputState(true, true, true);
         isStreaming = true;
         currentController = new AbortController();
-
+        
         // Create AI message container
         const aiMsg = document.createElement('div');
         aiMsg.className = 'message ai hidden';
+        aiMsg.dataset.index = conversationHistory.length;
         chat.insertBefore(aiMsg, typing);
         currentAiMsg = aiMsg;
-
+        
         let aiContent = '';
         let streamStarted = false;
-
+        
         try {
             const response = await fetch('/stream', {
                 method: 'POST',
@@ -1215,28 +2503,28 @@ HTML_TEMPLATE = '''
                 body: JSON.stringify({ message: message }),
                 signal: currentController.signal
             });
-
+            
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
-
+            
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-
+                
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\\n');
                 buffer = lines.pop() || '';
-
+                
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         try {
                             const data = JSON.parse(line.slice(6));
-
+                            
                             if (data.id) {
                                 currentStreamId = data.id;
                             }
-
+                            
                             if (data.cancelled) {
                                 aiMsg.classList.remove('hidden');
                                 aiMsg.innerHTML = '<span style="color:#f88;">[Cancelled]</span>';
@@ -1247,7 +2535,7 @@ HTML_TEMPLATE = '''
                                 finishStream();
                                 return;
                             }
-
+                            
                             if (data.token) {
                                 if (!streamStarted) {
                                     streamStarted = true;
@@ -1257,7 +2545,7 @@ HTML_TEMPLATE = '''
                                 aiContent += data.token;
                                 aiMsg.innerHTML = renderMarkdown(aiContent);
                                 highlightCode(aiMsg);
-
+                                
                                 const ts = aiMsg.querySelector('.timestamp');
                                 if (!ts) {
                                     const tsEl = document.createElement('span');
@@ -1266,7 +2554,7 @@ HTML_TEMPLATE = '''
                                 }
                                 scrollToBottomDelayed();
                             }
-
+                            
                             if (data.done) {
                                 aiMsg.innerHTML = renderMarkdown(aiContent);
                                 highlightCode(aiMsg);
@@ -1274,10 +2562,36 @@ HTML_TEMPLATE = '''
                                 ts.className = 'timestamp';
                                 ts.textContent = formatTime();
                                 aiMsg.appendChild(ts);
+                                
+                                // Add to history
                                 conversationHistory.push({ role: 'ai', content: aiContent, timestamp: formatTime() });
+                                aiMsg.dataset.index = conversationHistory.length - 1;
                                 saveHistory();
+                                
+                                // Add action buttons
+                                const actions = document.createElement('div');
+                                actions.className = 'message-actions';
+                                
+                                const copyBtn = document.createElement('button');
+                                copyBtn.className = 'message-action-btn';
+                                copyBtn.textContent = 'Copy';
+                                copyBtn.onclick = () => {
+                                    navigator.clipboard.writeText(aiContent).then(() => {
+                                        copyBtn.textContent = 'Copied!';
+                                        setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+                                    });
+                                };
+                                actions.appendChild(copyBtn);
+                                
+                                const deleteBtn = document.createElement('button');
+                                deleteBtn.className = 'message-action-btn delete';
+                                deleteBtn.textContent = 'Delete';
+                                deleteBtn.onclick = () => deleteMessage(parseInt(aiMsg.dataset.index));
+                                actions.appendChild(deleteBtn);
+                                
+                                aiMsg.appendChild(actions);
                             }
-
+                            
                             if (data.error) {
                                 if (!streamStarted) {
                                     aiMsg.classList.remove('hidden');
@@ -1309,7 +2623,7 @@ HTML_TEMPLATE = '''
             finishStream();
         }
     }
-
+    
     function finishStream() {
         setInputState(false, false, false);
         isStreaming = false;
@@ -1318,14 +2632,14 @@ HTML_TEMPLATE = '''
         currentStreamId = null;
         inputField.focus();
     }
-
+    
     async function stopGeneration() {
         // Stop the frontend stream
         if (currentController) {
             currentController.abort();
             currentController = null;
         }
-
+        
         // Cancel the backend stream
         if (currentStreamId) {
             try {
@@ -1339,61 +2653,64 @@ HTML_TEMPLATE = '''
             }
             currentStreamId = null;
         }
-
+        
         // Update UI
         if (currentAiMsg) {
             currentAiMsg.classList.remove('hidden');
-
+            
             let existingContent = currentAiMsg.innerText || '';
             existingContent = existingContent.replace(/\\s*\\d{1,2}:\\d{2}\\s*(?:AM|PM)?\\s*$/i, '').trim();
-
+            
             if (existingContent) {
                 currentAiMsg.innerHTML = renderMarkdown(existingContent) + ' <span style="color:#f88;">[Stopped]</span>';
             } else {
                 currentAiMsg.innerHTML = '<span style="color:#f88;">[Stopped]</span>';
             }
-
+            
             const ts = document.createElement('span');
             ts.className = 'timestamp';
             ts.textContent = formatTime();
             currentAiMsg.appendChild(ts);
-
+            
             const finalContent = existingContent ? existingContent + ' [Stopped]' : '[Stopped]';
             conversationHistory.push({ role: 'ai', content: finalContent, timestamp: formatTime() });
+            currentAiMsg.dataset.index = conversationHistory.length - 1;
             saveHistory();
-
+            
             currentAiMsg = null;
         }
-
+        
         // Send stop command to backend
         fetch('/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: '/stop' })
         }).catch(() => {});
-
+        
         finishStream();
     }
-
+    
     function clearChat() {
         clearChatUI();
         sendCommand('/new');
     }
-
+    
     // =============================================================================
     // File Upload
     // =============================================================================
-
+    
     async function handleFileUpload(event) {
-        const file = event.target.files[0];
+        const file = event.target.files ? event.target.files[0] : event.dataTransfer.files[0];
         if (!file) return;
-
-        event.target.value = '';
-
+        
+        if (event.target) {
+            event.target.value = '';
+        }
+        
         const timestamp = formatTime();
         const uploadMsg = '[Uploading: ' + file.name + ']';
         addMessage('announce', uploadMsg);
-
+        
         try {
             const reader = new FileReader();
             const base64 = await new Promise((resolve, reject) => {
@@ -1401,7 +2718,7 @@ HTML_TEMPLATE = '''
                 reader.onerror = reject;
                 reader.readAsDataURL(file);
             });
-
+            
             const response = await fetch('/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1411,42 +2728,42 @@ HTML_TEMPLATE = '''
                     mimetype: file.type
                 })
             });
-
+            
             const data = await response.json();
-
+            
             if (data.success) {
                 const ts = formatTime();
                 conversationHistory.push({ role: 'user', content: '[Uploaded: ' + file.name + ']', timestamp: ts });
                 saveHistory();
-                createMessageElement('user', '[Uploaded: ' + file.name + ']', ts);
-
+                createMessageElement('user', '[Uploaded: ' + file.name + ']', ts, false, conversationHistory.length - 1);
+                
                 if (data.message) {
                     addMessage('announce', data.message);
                 }
             } else {
-                addMessage('announce', 'Error: ' + (data.error || 'Upload failed'));
+                addMessage('announce', 'Error: ' + (data.error || 'Upload failed'), 'error');
             }
         } catch (err) {
-            addMessage('announce', 'Error: ' + err.message);
+            addMessage('announce', 'Error: ' + err.message, 'error');
         }
-
+        
         inputField.focus();
     }
-
+    
     // =============================================================================
     // Polling for Announcements
     // =============================================================================
-
+    
     async function pollAnnouncements() {
         if (!isConnected) return;
-
+        
         try {
             const response = await fetch('/poll?id=' + lastAnnouncementId, {
                 signal: AbortSignal.timeout(CONFIG.POLL_TIMEOUT)
             });
-
+            
             if (!response.ok) throw new Error('Poll failed');
-
+            
             const data = await response.json();
             if (data.messages) {
                 for (const msg of data.messages) {
@@ -1462,16 +2779,16 @@ HTML_TEMPLATE = '''
             scheduleReconnect();
         }
     }
-
+    
     // Poll for announcements periodically
     setInterval(() => {
         if (isConnected) pollAnnouncements();
     }, CONFIG.POLL_INTERVAL);
-
+    
     // =============================================================================
     // Theme System
     // =============================================================================
-
+    
     const themes = {
         'dark-black': {
             name: 'Black',
@@ -1663,44 +2980,6 @@ HTML_TEMPLATE = '''
                 '--scrollbar-hover': '#385038'
             }
         },
-        'dark-catpuccin': {
-            name: 'Catpuccin',
-            mode: 'dark',
-            vars: {
-                '--bg-primary': '#1e1e2e',
-                '--bg-secondary': '#181825',
-                '--bg-tertiary': '#313244',
-                '--bg-message-user': 'linear-gradient(135deg, #45475a 0%, #3b3b4f 100%)',
-                '--bg-message-ai': '#313244',
-                '--bg-message-announce': 'linear-gradient(135deg, #3a3b4a 0%, #313244 100%)',
-                '--bg-message-command': 'linear-gradient(135deg, #2e3a2e 0%, #243024 100%)',
-                '--bg-input': '#1e1e2e',
-                '--bg-code': '#11111b',
-                '--border-color': '#45475a',
-                '--border-message': '#585b70',
-                '--border-user': '#6c6f85',
-                '--text-primary': '#cdd6f4',
-                '--text-secondary': '#bac2de',
-                '--text-muted': '#6c7086',
-                '--text-code': '#a6adc8',
-                '--accent': '#cba6f7',
-                '--accent-glow': 'rgba(203, 166, 247, 0.4)',
-                '--error': '#f38ba8',
-                '--error-bg': 'linear-gradient(135deg, #453038 0%, #352028 100%)',
-                '--error-border': '#6c4050',
-                '--important': '#f9e2af',
-                '--important-bg': 'linear-gradient(135deg, #454030 0%, #353520 100%)',
-                '--important-border': '#6c6050',
-                '--info': '#89dceb',
-                '--info-bg': 'linear-gradient(135deg, #283545 0%, #182535 100%)',
-                '--info-border': '#405068',
-                '--button-bg': 'linear-gradient(135deg, #45475a 0%, #35374a 100%)',
-                '--button-hover': 'linear-gradient(135deg, #585b70 0%, #45475a 100%)',
-                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
-                '--scrollbar': '#45475a',
-                '--scrollbar-hover': '#585b70'
-            }
-        },
         'dark-sepia': {
             name: 'Sepia',
             mode: 'dark',
@@ -1737,6 +3016,44 @@ HTML_TEMPLATE = '''
                 '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
                 '--scrollbar': '#483820',
                 '--scrollbar-hover': '#584830'
+            }
+        },
+        'dark-catpuccin': {
+            name: 'Catpuccin',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#1e1e2e',
+                '--bg-secondary': '#181825',
+                '--bg-tertiary': '#313244',
+                '--bg-message-user': 'linear-gradient(135deg, #45475a 0%, #3b3b4f 100%)',
+                '--bg-message-ai': '#313244',
+                '--bg-message-announce': 'linear-gradient(135deg, #3a3b4a 0%, #313244 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #2e3a2e 0%, #243024 100%)',
+                '--bg-input': '#1e1e2e',
+                '--bg-code': '#11111b',
+                '--border-color': '#45475a',
+                '--border-message': '#585b70',
+                '--border-user': '#6c6f85',
+                '--text-primary': '#cdd6f4',
+                '--text-secondary': '#bac2de',
+                '--text-muted': '#6c7086',
+                '--text-code': '#a6adc8',
+                '--accent': '#cba6f7',
+                '--accent-glow': 'rgba(203, 166, 247, 0.4)',
+                '--error': '#f38ba8',
+                '--error-bg': 'linear-gradient(135deg, #453038 0%, #352028 100%)',
+                '--error-border': '#6c4050',
+                '--important': '#f9e2af',
+                '--important-bg': 'linear-gradient(135deg, #454030 0%, #353520 100%)',
+                '--important-border': '#6c6050',
+                '--info': '#89dceb',
+                '--info-bg': 'linear-gradient(135deg, #283545 0%, #182535 100%)',
+                '--info-border': '#405068',
+                '--button-bg': 'linear-gradient(135deg, #45475a 0%, #35374a 100%)',
+                '--button-hover': 'linear-gradient(135deg, #585b70 0%, #45475a 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#45475a',
+                '--scrollbar-hover': '#585b70'
             }
         },
         'light-black': {
@@ -1891,44 +3208,6 @@ HTML_TEMPLATE = '''
                 '--scrollbar-hover': '#80b080'
             }
         },
-        'light-catpuccin': {
-            name: 'Catpuccin',
-            mode: 'light',
-            vars: {
-                '--bg-primary': '#eff1f5',
-                '--bg-secondary': '#e6e9ef',
-                '--bg-tertiary': '#dce0e8',
-                '--bg-message-user': 'linear-gradient(135deg, #ccd0da 0%, #bcc0cc 100%)',
-                '--bg-message-ai': '#e6e9ef',
-                '--bg-message-announce': 'linear-gradient(135deg, #d0d4de 0%, #e6e9ef 100%)',
-                '--bg-message-command': 'linear-gradient(135deg, #d0e6d0 0%, #c8dcc8 100%)',
-                '--bg-input': '#eff1f5',
-                '--bg-code': '#e6e9ef',
-                '--border-color': '#bcc0cc',
-                '--border-message': '#acb0bc',
-                '--border-user': '#9ca0ac',
-                '--text-primary': '#4c4f69',
-                '--text-secondary': '#5c5f72',
-                '--text-muted': '#8c8fa1',
-                '--text-code': '#5c5f72',
-                '--accent': '#8839ef',
-                '--accent-glow': 'rgba(136, 57, 239, 0.3)',
-                '--error': '#d20f39',
-                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
-                '--error-border': '#d8a8a8',
-                '--important': '#df8e1d',
-                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
-                '--important-border': '#d8c8a8',
-                '--info': '#179299',
-                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
-                '--info-border': '#a8c8d8',
-                '--button-bg': 'linear-gradient(135deg, #ccd0da 0%, #bcc0cc 100%)',
-                '--button-hover': 'linear-gradient(135deg, #bcc0cc 0%, #acb0bc 100%)',
-                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
-                '--scrollbar': '#bcc0cc',
-                '--scrollbar-hover': '#acb0bc'
-            }
-        },
         'light-sepia': {
             name: 'Sepia',
             mode: 'light',
@@ -1966,75 +3245,99 @@ HTML_TEMPLATE = '''
                 '--scrollbar': '#d0c0a0',
                 '--scrollbar-hover': '#b0a080'
             }
+        },
+        'light-catpuccin': {
+            name: 'Catpuccin',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#eff1f5',
+                '--bg-secondary': '#e6e9ef',
+                '--bg-tertiary': '#dce0e8',
+                '--bg-message-user': 'linear-gradient(135deg, #ccd0da 0%, #bcc0cc 100%)',
+                '--bg-message-ai': '#e6e9ef',
+                '--bg-message-announce': 'linear-gradient(135deg, #d0d4de 0%, #e6e9ef 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #d0e6d0 0%, #c8dcc8 100%)',
+                '--bg-input': '#eff1f5',
+                '--bg-code': '#e6e9ef',
+                '--border-color': '#bcc0cc',
+                '--border-message': '#acb0bc',
+                '--border-user': '#9ca0ac',
+                '--text-primary': '#4c4f69',
+                '--text-secondary': '#5c5f72',
+                '--text-muted': '#8c8fa1',
+                '--text-code': '#5c5f72',
+                '--accent': '#8839ef',
+                '--accent-glow': 'rgba(136, 57, 239, 0.3)',
+                '--error': '#d20f39',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#df8e1d',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#179299',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #ccd0da 0%, #bcc0cc 100%)',
+                '--button-hover': 'linear-gradient(135deg, #bcc0cc 0%, #acb0bc 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#bcc0cc',
+                '--scrollbar-hover': '#acb0bc'
+            }
         }
     };
-
+    
     let currentTheme = 'dark-black';
-
+    
     function applyTheme(themeId) {
         const theme = themes[themeId];
         if (!theme) return;
-
+        
         const root = document.documentElement;
         for (const [varName, value] of Object.entries(theme.vars)) {
             root.style.setProperty(varName, value);
         }
-
+        
         currentTheme = themeId;
         localStorage.setItem('theme', themeId);
         updateThemeButtons();
     }
-
+    
     function updateThemeButtons() {
         document.querySelectorAll('.theme-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.theme === currentTheme);
         });
     }
-
+    
     function createThemeButtons() {
         const grid = document.getElementById('theme-grid');
         grid.innerHTML = '';
-
+        
         const darkThemes = Object.entries(themes).filter(([id, t]) => t.mode === 'dark');
         const lightThemes = Object.entries(themes).filter(([id, t]) => t.mode === 'light');
-
+        
         const createButtons = (themeList) => {
             themeList.forEach(([id, theme]) => {
                 const btn = document.createElement('button');
                 btn.className = 'theme-btn' + (id === currentTheme ? ' active' : '');
                 btn.dataset.theme = id;
-
+                
                 const bgColor = theme.vars['--bg-primary'];
                 const accentColor = theme.vars['--accent'];
-
+                
                 btn.innerHTML = `
                     <div class="theme-preview" style="background: linear-gradient(135deg, ${bgColor} 50%, ${accentColor} 50%);"></div>
                     ${theme.name}
                 `;
-
+                
                 btn.onclick = () => applyTheme(id);
                 grid.appendChild(btn);
             });
         };
-
+        
         createButtons(darkThemes);
         createButtons(lightThemes);
     }
-
-    function toggleSettings() {
-        const overlay = document.getElementById('settings-overlay');
-        const modal = document.getElementById('settings-modal');
-
-        overlay.classList.toggle('show');
-        modal.classList.toggle('show');
-    }
-
-    function closeSettings(event) {
-        if (event.target.id === 'settings-overlay') {
-            toggleSettings();
-        }
-    }
-
+    
     function loadTheme() {
         const saved = localStorage.getItem('theme');
         if (saved && themes[saved]) {
@@ -2044,11 +3347,11 @@ HTML_TEMPLATE = '''
         }
         createThemeButtons();
     }
-
+    
     // =============================================================================
     // Service Worker Registration (PWA)
     // =============================================================================
-
+    
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('/sw.js')
@@ -2056,14 +3359,14 @@ HTML_TEMPLATE = '''
                 .catch(err => console.log('Service Worker registration failed:', err));
         });
     }
-
+    
     // =============================================================================
     // Initialization
     // =============================================================================
-
+    
     // Set initial connection status
     updateConnectionStatus('connecting');
-
+    
     // Check connection immediately
     setTimeout(() => {
         checkConnection().catch(err => {
@@ -2073,14 +3376,14 @@ HTML_TEMPLATE = '''
             scheduleReconnect();
         });
     }, 100);
-
+    
     // Load chat history and theme
     loadHistory();
     loadTheme();
     </script>
 </body>
 </html>
-'''
+"""
 
 # ==============================================================================
 # WebUI Channel Class
@@ -2089,68 +3392,72 @@ HTML_TEMPLATE = '''
 class Webui(core.channel.Channel):
     """
     A web-based channel for communicating with the AI through a browser interface.
-
+    
     This channel provides:
     - Real-time streaming responses via Server-Sent Events
     - Connection monitoring with automatic reconnection
-    - Theme customization with 24 built-in themes
-    - File upload support
+    - Theme customization with 12 built-in themes
+    - File upload support (button + drag & drop)
     - PWA support for mobile installation
     - Markdown rendering with syntax highlighting
+    - Message editing, deletion, search, and export
+    - Keyboard shortcuts and accessibility features
+    - Virtual scrolling for performance
+    - CSRF and CSP security headers
     """
-
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.announcement_queue = []
         self.announcement_id = 0
         self.main_loop = None
-
+    
     async def on_ready(self):
         """Called when the channel is ready to receive messages."""
         await asyncio.sleep(2)
         await self.announce("Server is up!")
-
+    
     async def run(self):
         """
         Start the Flask web server to handle HTTP requests.
-
+        
         The server runs in a separate thread to avoid blocking
         the asyncio event loop.
         """
         core.log("webui", "Starting WebUI")
-
+        
         self.main_loop = asyncio.get_running_loop()
-
+        
         global channel_instance
         channel_instance = self
-
+        
         # Start Flask in a separate thread
         flask_thread = Thread(target=self._run_flask, daemon=True)
         flask_thread.start()
-
+        
         host = core.config.get("webui_host", "127.0.0.1")
         port = core.config.get("webui_port", 5000)
         core.log("webui", f"WebUI started on {host}:{port}")
-
+        
         # Keep the coroutine running
         while True:
             await asyncio.sleep(1)
-
+    
     def _run_flask(self):
         """Run Flask in a separate thread with proper socket configuration."""
         from werkzeug.serving import make_server
-
+        
         host = core.config.get("webui_host", "127.0.0.1")
         port = core.config.get("webui_port", 5000)
-
+        
         server = make_server(host, port, app, threaded=True)
         server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.serve_forever()
-
+    
     async def announce(self, message: str, type: str = None):
         """
         Handle announcements from the framework and push to web UI.
-
+        
         Args:
             message: The announcement message to display
             type: Optional type (info, error, important)
@@ -2176,10 +3483,10 @@ def index():
 def poll_announcements():
     """
     Return announcements newer than the given ID.
-
+    
     Query params:
         id: Last announcement ID received by client
-
+    
     Returns:
         JSON object with list of new messages
     """
@@ -2187,7 +3494,7 @@ def poll_announcements():
         last_id = int(request.args.get('id', 0))
     except ValueError:
         last_id = 0
-
+    
     messages = [msg for msg in channel_instance.announcement_queue if msg['id'] > last_id]
     return jsonify({'messages': messages})
 
@@ -2195,26 +3502,26 @@ def poll_announcements():
 def stream_message():
     """
     Stream AI response token by token using Server-Sent Events.
-
+    
     This endpoint:
     1. Receives user message
     2. Generates a unique stream ID
     3. Streams tokens from the AI
     4. Handles cancellation via stream_cancellations set
-
+    
     Returns:
         SSE stream with JSON data for each token
     """
     global channel_instance
-
+    
     data = request.get_json()
     user_message = data.get('message', '')
     stream_id = str(uuid.uuid4())[:8]
-
+    
     def generate():
         token_queue = Queue()
         done = object()
-
+        
         async def collect_tokens():
             """Collect tokens from the AI and put them in the queue."""
             try:
@@ -2228,17 +3535,17 @@ def stream_message():
                 token_queue.put(('error', str(e)))
             finally:
                 token_queue.put(done)
-
+        
         # Run the async token collection in the main event loop
         future = asyncio.run_coroutine_threadsafe(collect_tokens(), channel_instance.main_loop)
-
+        
         # Send stream ID first
         yield f"data: {json.dumps({'id': stream_id})}\n\n"
-
+        
         # Stream tokens
         while True:
             item = token_queue.get()
-
+            
             if item is done:
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 break
@@ -2251,74 +3558,173 @@ def stream_message():
                     break
             else:
                 yield f"data: {json.dumps({'token': item})}\n\n"
-
+        
         # Ensure the async task completes
         future.result()
-
+    
     return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/send', methods=['POST'])
 def send_message():
     """
     Send a message and wait for complete response.
-
+    
     Used for commands that need immediate response.
     """
     global channel_instance
-
+    
     data = request.get_json()
     user_message = data.get('message', '')
-
+    
     future = asyncio.run_coroutine_threadsafe(
         channel_instance.send("user", user_message),
         channel_instance.main_loop
     )
     response = future.result()
-
+    
     return jsonify({'response': response})
+
+@app.route('/sync', methods=['POST'])
+def sync_context():
+    """
+    Sync the frontend conversation history with the backend context.
+    This rebuilds _turns from the provided messages list.
+
+    Use this when indices get out of sync between frontend and backend.
+    """
+    global channel_instance
+
+    data = request.get_json()
+    messages = data.get('messages', [])
+
+    if not channel_instance or not hasattr(channel_instance, 'manager') or not hasattr(channel_instance.manager, 'API'):
+        return jsonify({'success': False, 'error': 'API not available'})
+
+    # Rebuild _turns from the provided messages
+    # Frontend sends messages with role='user' and role='ai' (or 'assistant')
+    # Backend uses role='user' and role='assistant'
+    new_turns = []
+    for msg in messages:
+        role = msg.get('role', '')
+        content = msg.get('content', '')
+
+        # Normalize role names
+        if role == 'ai':
+            role = 'assistant'
+
+        if role in ('user', 'assistant'):
+            new_turns.append({
+                'role': role,
+                'content': content
+            })
+
+    channel_instance.manager.API._turns = new_turns
+    core.log("webui", f"Synced context: {len(new_turns)} turns")
+
+    # Return the new state for verification
+    turns_summary = [{'role': t['role'], 'content': t['content'][:50] + '...' if len(t['content']) > 50 else t['content']} for t in new_turns]
+
+    return jsonify({
+        'success': True, 
+        'count': len(new_turns),
+        'turns': turns_summary
+    })
+
+@app.route('/edit', methods=['POST'])
+def edit_message():
+    """Edit a message in the conversation history."""
+    global channel_instance
+
+    data = request.get_json()
+    index = data.get('index', 0)
+    new_content = data.get('content', '')
+
+    if not channel_instance or not hasattr(channel_instance, 'manager') or not hasattr(channel_instance.manager, 'API'):
+        return jsonify({'success': False, 'error': 'API not available'})
+
+    turns = channel_instance.manager.API._turns
+
+    if 0 <= index < len(turns):
+        old_content = turns[index]['content'][:50] if turns[index].get('content') else ''
+        turns[index]['content'] = new_content
+        core.log("webui", f"Edited turn {index}: '{old_content}...' -> '{new_content[:50]}...'")
+        return jsonify({'success': True, 'turns_count': len(turns)})
+
+    core.log("webui", f"Edit failed: index {index} out of range (turns has {len(turns)})")
+    return jsonify({'success': False, 'error': f'Index {index} out of range (turns has {len(turns)})'})
+
+@app.route('/delete', methods=['POST'])
+def delete_message():
+    """Delete a message and all messages after it from the context."""
+    global channel_instance
+
+    data = request.get_json()
+    index = data.get('index', 0)
+
+    if not channel_instance or not hasattr(channel_instance, 'manager') or not hasattr(channel_instance.manager, 'API'):
+        return jsonify({'success': False, 'error': 'API not available'})
+
+    turns = channel_instance.manager.API._turns
+    original_count = len(turns)
+
+    if 0 <= index <= len(turns):
+        removed_count = len(turns) - index
+        # Keep only messages before the index
+        channel_instance.manager.API._turns = turns[:index]
+        remaining_count = len(channel_instance.manager.API._turns)
+        core.log("webui", f"Deleted {removed_count} turns from index {index}, {remaining_count} remaining")
+        return jsonify({
+            'success': True, 
+            'removed': removed_count,
+            'remaining': remaining_count,
+            'turns_count': remaining_count
+        })
+
+    core.log("webui", f"Delete failed: index {index} out of range (turns has {len(turns)})")
+    return jsonify({'success': False, 'error': f'Index {index} out of range (turns has {len(turns)})'})
 
 @app.route('/cancel', methods=['POST'])
 def cancel_stream():
     """
     Cancel an ongoing stream.
-
+    
     Sets the cancel flag on the API and adds the stream ID to cancellations.
     """
     global channel_instance
-
+    
     data = request.get_json()
     stream_id = data.get('id')
-
+    
     # Set the cancel flag on the API
     if channel_instance:
         channel_instance.manager.API.cancel_request = True
-
+    
     if stream_id:
         stream_cancellations.add(stream_id)
-
+    
     return jsonify({'success': True})
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """
     Handle file upload.
-
+    
     Receives base64-encoded file content and processes it.
     """
     global channel_instance
-
+    
     data = request.get_json()
     filename = data.get('filename', '')
     content_b64 = data.get('content', '')
     mimetype = data.get('mimetype', '')
-
+    
     try:
         content = base64.b64decode(content_b64).decode('utf-8', errors='replace')
-
+        
         # Insert the file content into the conversation
         result = f"File uploaded: {filename} ({len(content)} bytes)"
         channel_instance.manager.API.insert_turn("user", f"[File: {filename}]\n{content[:1000]}...")
-
+        
         return jsonify({'success': True, 'message': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
