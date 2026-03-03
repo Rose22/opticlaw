@@ -86,7 +86,7 @@ import core
 
 class MyModule(core.module.Module):
     """
-    To make a channel, subclass from `core.module.Module`
+    To make a module, subclass from `core.module.Module`
     Make sure to `import core`
 
     Modules can use self.manager to access the manager object, and self.manager.channel to access the current channel!
