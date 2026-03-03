@@ -336,9 +336,8 @@ class Manager:
                     arg_display.append(str(arg_value))
                 arg_display = ", ".join(arg_display)
                 announce_string = f"calling tool {tool_call.function.name}({arg_display})"
-                if self.channels:
-                    for channel_name, channel_obj in self.channels.items():
-                        await channel_obj.announce(announce_string)
+                if self.channel:
+                    await self.channel.announce(announce_string)
                 else:
                     core.log("toolcall", announce_string)
 
