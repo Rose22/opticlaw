@@ -18,6 +18,8 @@ class APIClient():
         self._model = model
         self._turns = []
 
+        self.cancel_request = False
+
     async def insert_turn(self, role: str, content: str):
         """inserts a turn (message with role and content) into context, trimming when needed"""
 
@@ -36,7 +38,7 @@ class APIClient():
         while len(self._turns) > max_turns or len(str(self._turns)) > max_tokens:
             self._turns.pop(0)
         if len(str(self._turns)) > max_tokens and self.manager.channel:
-                await self.manager.channel.announce("input was too large! context size trimmed.")
+                await self.manager.channel.announce("input was too large! context size trimmed.", error=True)
         return len(self._turns) <= max_turns
 
     def _request(self, context, debug=False, **kwargs):
@@ -92,6 +94,8 @@ class APIClient():
     async def send(self, role: str, content: str, system_prompt=True, channel=None, use_context=None, use_tools=True, tools=None, add_turn=True, debug=False, **kwargs):
         """send a message to the LLM. returns a string"""
 
+        self.cancel_request = False
+
         if channel:
             self.manager.channel = channel
 
@@ -115,11 +119,13 @@ class APIClient():
         except Exception as e:
             core.log_error("error while sending request to AI", e)
             if self.manager.channel:
-                await self.manager.channel.announce(f"error while sending request to AI: {e}")
+                await self.manager.channel.announce(f"error while sending request to AI: {e}", error=True)
             return None
 
     async def send_stream(self, role: str, content: str, system_prompt=True, channel=None, use_context=None, use_tools=True, tools=None, add_turn=True, debug=False, **kwargs):
         """send a message to the LLM. is an iterable async generator"""
+
+        self.cancel_request = False
 
         if channel:
             self.manager.channel = channel
@@ -142,10 +148,10 @@ class APIClient():
         try:
             async for token in self._recv_stream(self._request(context, tools=(tools if use_tools else None), stream=True, debug=debug, **kwargs), **kwargs, debug=debug):
                 yield token
-        except:
+        except Exception as e:
             core.log_error("error while sending request to AI", e)
             if self.manager.channel:
-                await self.manager.channel.announce(f"error while sending request to AI: {e}")
+                await self.manager.channel.announce(f"error while sending request to AI: {e}", error=True)
 
     async def _recv(self, response, debug=False, **kwargs):
         """takes a response object and extracts the message from it, handling tool calls if needed"""
@@ -158,7 +164,7 @@ class APIClient():
         except Exception as e:
             core.log_error("error while receiving response from AI", e)
             if self.manager.channel:
-                await self.manager.channel.announce(f"error while receiving response from AI: {e}")
+                await self.manager.channel.announce(f"error while receiving response from AI: {e}", error=True)
             return None
 
         # extract message content
@@ -187,6 +193,12 @@ class APIClient():
 
         try:
             for chunk in response:
+                if self.cancel_request:
+                    # allow cancelling the stream
+                    if hasattr(response, "close"):
+                        response.close()
+                    return
+
                 streamed_token = chunk.choices[0].delta
                 if debug:
                     core.log("debug:stream_chunk", chunk.choices[0].delta)
@@ -230,5 +242,8 @@ class APIClient():
         except Exception as e:
             core.log_error("error while receiving response from AI", e)
             if self.manager.channel:
-                await self.manager.channel.announce(f"error while receiving response from AI: {e}")
+                await self.manager.channel.announce(f"error while receiving response from AI: {e}", error=True)
 
+    async def cancel(self):
+        self.cancel_request = True
+        return True

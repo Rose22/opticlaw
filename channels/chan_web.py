@@ -167,6 +167,27 @@ HTML_TEMPLATE = '''
             max-width: 90%;
         }
 
+        .message.announce.important {
+            background: linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%);
+            border: 1px solid #5a5a2a;
+            color: #dada80;
+            font-style: normal;
+            font-weight: 500;
+        }
+        .message.announce.error {
+            background: linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%);
+            border: 1px solid #5a2a2a;
+            color: #f08080;
+            font-style: normal;
+            font-weight: 500;
+        }
+        .message.announce.error .timestamp {
+            color: #905050;
+        }
+        .message.announce.important .timestamp {
+            color: #8a8a4a;
+        }
+
         .message.command {
             align-self: flex-start;
             background: linear-gradient(135deg, #1a2a1a 0%, #0f1f0f 100%);
@@ -548,6 +569,7 @@ HTML_TEMPLATE = '''
                 font-size: 0.9rem;
             }
         }
+
     </style>
 </head>
 <body>
@@ -739,12 +761,7 @@ HTML_TEMPLATE = '''
                 currentController = null;
             }
 
-            // Send /stop command to the channel
-            const timestamp = formatTime();
-            conversationHistory.push({ role: 'command', content: "stopping..", timestamp: timestamp });
-            saveHistory();
-            createMessageElement('command', "stopping..", timestamp);
-
+            // Cancel the backend stream
             if (currentStreamId) {
                 try {
                     await fetch('/cancel', {
@@ -754,48 +771,45 @@ HTML_TEMPLATE = '''
                     });
                 } catch (e) {}
                 currentStreamId = null;
-
             }
+
+            // Show stopped in UI
             if (currentAiMsg) {
-                    currentAiMsg.classList.remove('hidden');
+                currentAiMsg.classList.remove('hidden');
 
-                    // Get existing content (if any partial response was streamed)
-                    let existingContent = currentAiMsg.innerText || '';
-                    // Remove any existing timestamp from the content
-                    existingContent = existingContent.replace(/\\s*\\d{1,2}:\\d{2}\\s*(?:AM|PM)?\\s*$/i, '').trim();
+                let existingContent = currentAiMsg.innerText || '';
+                existingContent = existingContent.replace(/\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*$/i, '').trim();
 
-                    // Show stopped message
-                    if (existingContent) {
-                        currentAiMsg.innerHTML = renderMarkdown(existingContent) + ' <span style="color:#f88;">[Stopped]</span>';
-                    } else {
-                        currentAiMsg.innerHTML = '<span style="color:#f88;">[Stopped]</span>';
-                    }
+                if (existingContent) {
+                    currentAiMsg.innerHTML = renderMarkdown(existingContent) + ' <span style="color:#f88;">[Stopped]</span>';
+                } else {
+                    currentAiMsg.innerHTML = '<span style="color:#f88;">[Stopped]</span>';
+                }
 
-                    const ts = document.createElement('span');
-                    ts.className = 'timestamp';
-                    ts.textContent = formatTime();
-                    currentAiMsg.appendChild(ts);
+                const ts = document.createElement('span');
+                ts.className = 'timestamp';
+                ts.textContent = formatTime();
+                currentAiMsg.appendChild(ts);
 
-                    // Save to history
-                    const finalContent = existingContent ? existingContent + ' <br><span style="color:#f88;">[Stopped]</span>' : '<span style="color:#f88;">[Stopped]</span>';
-                    conversationHistory.push({ role: 'ai', content: finalContent, timestamp: formatTime() });
-                    saveHistory();
+                const finalContent = existingContent ? existingContent + ' [Stopped]' : '[Stopped]';
+                conversationHistory.push({ role: 'ai', content: finalContent, timestamp: formatTime() });
+                saveHistory();
 
-                    currentAiMsg = null;
+                currentAiMsg = null;
             }
-            try {
-                await fetch('/send', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: '/stop'})
-                });
-            } catch (e) {}
+
+            // Send /stop WITHOUT awaiting - let it run in background
+            fetch('/send', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: '/stop'})
+            }).catch(e => {});
 
             setInputState(false, false, false);
             isStreaming = false;
-            currentAiMsg = null;
             inputField.focus();
         }
+
         function clearChatUI() {
             conversationHistory = [];
             saveHistory();
@@ -820,6 +834,7 @@ HTML_TEMPLATE = '''
             }
             if (cmd.startsWith("/stop")) {
                 await stopGeneration();
+                return;
             }
 
             const timestamp = formatTime();
@@ -853,8 +868,6 @@ HTML_TEMPLATE = '''
                     createMessageElement('command', "restarting server..", timestamp);
 
                     return;
-                } else if (cmd.startsWith("/stop")) {
-                    return;
                 }
                 addMessage('announce', 'Error: ' + err.message);
             }
@@ -868,13 +881,30 @@ HTML_TEMPLATE = '''
                 const data = await response.json();
                 if (data.messages) {
                     for (const msg of data.messages) {
-                        addMessage('announce', msg.content);
+                        addAnnouncement(msg.content, msg.important, msg.error);
                         lastAnnouncementId = msg.id;
                     }
                 }
             } catch (err) {
                 console.error('Poll error:', err);
             }
+        }
+
+        function addAnnouncement(content, important = false, error = false) {
+            const div = document.createElement('div');
+            div.className = 'message announce';
+            if (important) div.classList.add('important');
+            if (error) div.classList.add('error');
+
+            const timeStr = formatTime();
+            div.innerHTML = content + '<span class="timestamp">' + timeStr + '</span>';
+
+            if (isStreaming && currentAiMsg) {
+                chat.insertBefore(div, currentAiMsg);
+            } else {
+                chat.insertBefore(div, typing);
+            }
+            chat.scrollTop = chat.scrollHeight;
         }
 
         setInterval(pollAnnouncements, 500);
@@ -1127,7 +1157,7 @@ class Webui(core.channel.Channel):
         server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.serve_forever()
 
-    async def announce(self, message: str):
+    async def announce(self, message: str, important: bool = False, error: bool = False):
         """
         Handle announcements from the framework and push to web UI.
         """
@@ -1135,7 +1165,9 @@ class Webui(core.channel.Channel):
         self.announcement_id += 1
         self.announcement_queue.append({
             'id': self.announcement_id,
-            'content': message.replace('\n', '<br>')
+            'content': message.replace('\n', '<br>'),
+            'important': important,
+            'error': error
         })
 
 channel_instance = None
@@ -1159,15 +1191,6 @@ def poll_announcements():
 
 # Add at the top with other globals
 stream_cancellations = set()
-
-@app.route('/cancel', methods=['POST'])
-def cancel_stream():
-    """Cancel an ongoing stream"""
-    data = request.get_json()
-    stream_id = data.get('id')
-    if stream_id:
-        stream_cancellations.add(stream_id)
-    return jsonify({'success': True})
 
 @app.route('/stream', methods=['POST'])
 def stream_message():
@@ -1232,6 +1255,23 @@ def send_message():
     response = future.result()
 
     return jsonify({'response': response})
+
+@app.route('/cancel', methods=['POST'])
+def cancel_stream():
+    """Cancel an ongoing stream"""
+    global channel_instance
+
+    data = request.get_json()
+    stream_id = data.get('id')
+
+    # Set the cancel flag on the API
+    if channel_instance:
+        channel_instance.manager.API.cancel_request = True
+
+    if stream_id:
+        stream_cancellations.add(stream_id)
+
+    return jsonify({'success': True})
 
 @app.route('/upload', methods=['POST'])
 def upload_file():

@@ -358,6 +358,8 @@ class Manager:
                 for arg_name, arg_value in arg_obj.items():
                     arg_display.append(str(arg_value))
                 arg_display = ", ".join(arg_display)
+                if len(arg_display) > 100:
+                    arg_display = f"{arg_display[:100]}.."
                 announce_string = f"calling tool {tool_call.function.name}({arg_display})"
                 if self.channel:
                     await self.channel.announce(announce_string)
@@ -383,7 +385,12 @@ class Manager:
             if turn.get("role") == "user":
                 user_last_turn = turn
 
-        prompt = self.API._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]
+        if not self.API.cancel_request:
+            prompt = self.API._turns+[{"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}]
+        else:
+            if self.channel:
+                await self.channel.announce("toolcalling chain cancelled")
+            return None
 
         try:
             return await self.API._recv(
@@ -394,4 +401,4 @@ class Manager:
         except Exception as e:
             core.log_error(f"error while processing tool results", e)
             if self.channel:
-                await self.channel.announce(f"error while processing tool results: {e}")
+                await self.channel.announce(f"error while processing tool results: {e}", error=True)

@@ -146,9 +146,8 @@ class Channel:
                 os.execv(sys.argv[0], sys.argv)
             case "stop":
                 # just use restart for now until i figure out how to kill the asyncio tasks
-                await self.announce_all("stopping..")
-                time.sleep(0.1)
-                os.execv(sys.argv[0], sys.argv)
+                await self.manager.API.cancel()
+                return "stopped!"
             case _:
                 return self._help
 
@@ -171,11 +170,11 @@ class Channel:
         async for token in self.manager.API.send_stream(role, message, channel=self, **kwargs):
             yield token
 
-    async def announce(self, message: str):
+    async def announce(self, message: str, important=False, error=False):
         """called externally to announce things in this channel, such as a reminder sent by the AI"""
         raise NotImplementedError
 
-    async def announce_all(self, message: str):
+    async def announce_all(self, message: str, important=False, error=False):
         """announces a message across all channels. useful for very important notifications!"""
         for channel_name, channel in self.manager.channels.items():
             await channel.announce(message)
