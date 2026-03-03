@@ -20,7 +20,7 @@ HTML_TEMPLATE = '''
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#111111">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="OptiClaw">
     <link rel="manifest" href="/manifest.json">
@@ -32,6 +32,42 @@ HTML_TEMPLATE = '''
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
     <style>
+        :root {
+            /* Default dark black theme */
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #111111;
+            --bg-tertiary: #1a1a1a;
+            --bg-message-user: linear-gradient(135deg, #3a3a3a 0%, #2d2d2d 100%);
+            --bg-message-ai: #1a1a1a;
+            --bg-message-announce: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%);
+            --bg-message-command: linear-gradient(135deg, #1a2a1a 0%, #0f1f0f 100%);
+            --bg-input: #161616;
+            --bg-code: #0a0a0a;
+            --border-color: #2a2a2a;
+            --border-message: #333333;
+            --border-user: #444444;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --text-muted: #666666;
+            --text-code: #d0d0d0;
+            --accent: #4ade80;
+            --accent-glow: rgba(74, 222, 128, 0.6);
+            --error: #f08080;
+            --error-bg: linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%);
+            --error-border: #5a2a2a;
+            --important: #dada80;
+            --important-bg: linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%);
+            --important-border: #5a5a2a;
+            --info: #80b0d0;
+            --info-bg: linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%);
+            --info-border: #2a4a6a;
+            --button-bg: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
+            --button-hover: linear-gradient(135deg, #444444 0%, #333333 100%);
+            --button-stop: linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%);
+            --scrollbar: #2a2a2a;
+            --scrollbar-hover: #3a3a3a;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -40,10 +76,9 @@ HTML_TEMPLATE = '''
 
         html, body {
             height: 100%;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-                Ubuntu, sans-serif;
-            background: #0a0a0a;
-            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
         }
 
         .app-container {
@@ -52,14 +87,14 @@ HTML_TEMPLATE = '''
             height: 100%;
             max-width: 900px;
             margin: 0 auto;
-            background: #111;
-            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+            background: var(--bg-secondary);
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
         }
 
         header {
             padding: 16px 20px;
-            background: linear-gradient(180deg, #1a1a1a 0%, #0f0f0f 100%);
-            border-bottom: 1px solid #2a2a2a;
+            background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-primary) 100%);
+            border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -70,21 +105,162 @@ HTML_TEMPLATE = '''
             align-items: center;
             gap: 12px;
         }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
 
         header h1 {
             font-size: 1.3rem;
             font-weight: 600;
-            color: #e8e8e8;
+        }
+
+        #settings-btn {
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #settings-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Settings Modal */
+        .settings-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+            z-index: 1000;
+        }
+
+        .settings-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .settings-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+            z-index: 1001;
+        }
+
+        .settings-modal.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .settings-header h2 {
+            font-size: 1.2rem;
+            color: var(--text-primary);
+        }
+
+        .settings-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .settings-close:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .settings-content {
+            padding: 16px 20px;
+        }
+
+        .settings-content h3 {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 8px;
+        }
+
+        .theme-btn {
+            padding: 12px 8px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .theme-btn:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .theme-btn.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .theme-preview {
+            width: 100%;
+            height: 24px;
+            border-radius: 4px;
+            margin-bottom: 6px;
         }
 
         .status-dot {
             width: 10px;
             height: 10px;
-            background: #4ade80;
+            background: var(--accent);
             border-radius: 50%;
-            box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+            box-shadow: 0 0 10px var(--accent-glow);
             animation: pulse 2s infinite;
         }
+
+        .status-dot.inactive {
+            background: #f87171;
+            box-shadow: 0 0 10px rgba(248,113,113,0.6);
+        }
+
         .status-dot.connecting {
             background: #fbbf24;
             box-shadow: 0 0 10px rgba(251,191,36,0.6);
@@ -106,18 +282,18 @@ HTML_TEMPLATE = '''
 
         .header-btn {
             padding: 8px 12px;
-            background: #1a1a1a;
-            border: 1px solid #333;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            color: #888;
+            color: var(--text-secondary);
             font-size: 0.85rem;
             cursor: pointer;
             transition: background 0.2s, color 0.2s;
         }
 
         .header-btn:hover {
-            background: #222;
-            color: #bbb;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
         }
 
         .chat-container {
@@ -127,7 +303,7 @@ HTML_TEMPLATE = '''
             display: flex;
             flex-direction: column;
             gap: 12px;
-            background: #0d0d0d;
+            background: var(--bg-primary);
         }
 
         .message {
@@ -138,7 +314,6 @@ HTML_TEMPLATE = '''
             word-wrap: break-word;
             animation: slideIn 0.2s ease-out;
         }
-
         .message.hidden {
             display: none;
         }
@@ -150,98 +325,78 @@ HTML_TEMPLATE = '''
 
         .message.user {
             align-self: flex-end;
-            background: linear-gradient(135deg, #3a3a3a 0%, #2d2d2d 100%);
-            color: #f0f0f0;
-            border: 1px solid #444;
+            background: var(--bg-message-user);
+            color: var(--text-primary);
+            border: 1px solid var(--border-user);
             border-bottom-right-radius: 4px;
         }
 
         .message.ai {
             align-self: flex-start;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #d0d0d0;
+            background: var(--bg-message-ai);
+            border: 1px solid var(--border-message);
+            color: var(--text-code);
             border-bottom-left-radius: 4px;
         }
 
         .message.announce {
             align-self: center;
-            background: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%);
-            border: 1px solid #404040;
-            color: #a0a0a0;
+            background: var(--bg-message-announce);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
             font-style: italic;
             text-align: center;
             font-size: 0.9rem;
             max-width: 90%;
         }
 
-        .message.announce.info {
-            background: linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%);
-            border: 1px solid #2a4a6a;
-            color: #80b0d0;
-        }
-        .message.announce.info .timestamp {
-            color: #4a6a8a;
-        }
         .message.announce.important {
-            background: linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%);
-            border: 1px solid #5a5a2a;
-            color: #dada80;
+            background: var(--important-bg);
+            border: 1px solid var(--important-border);
+            color: var(--important);
             font-style: normal;
             font-weight: 500;
-        }
-        .message.announce.error {
-            background: linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%);
-            border: 1px solid #5a2a2a;
-            color: #f08080;
-            font-style: normal;
-            font-weight: 500;
-        }
-        .message.announce.error .timestamp {
-            color: #905050;
-        }
-        .message.announce.important .timestamp {
-            color: #8a8a4a;
         }
 
-        .message.announce.reconnecting {
-            opacity: 0.7;
+        .message.announce.error {
+            background: var(--error-bg);
+            border: 1px solid var(--error-border);
+            color: var(--error);
+            font-style: normal;
+            font-weight: 500;
+        }
+
+        .message.announce.info {
+            background: var(--info-bg);
+            border: 1px solid var(--info-border);
+            color: var(--info);
+            font-style: normal;
         }
 
         .message.command {
             align-self: flex-start;
-            background: linear-gradient(135deg, #1a2a1a 0%, #0f1f0f 100%);
+            background: var(--bg-message-command);
             border: 1px solid #2a4a2a;
-            color: #a0d0a0;
             font-family: 'Consolas', 'Monaco', monospace;
             font-size: 0.9rem;
             border-bottom-left-radius: 4px;
             max-width: 85%;
         }
 
-        .message.command .timestamp {
-            color: #4a6a4a;
-        }
-
         .message .timestamp {
             display: block;
             font-size: 0.7rem;
-            color: #666;
+            color: var(--text-muted);
             margin-top: 6px;
             text-align: right;
         }
 
-        .message.ai .timestamp {
-            text-align: left;
-        }
-
-        .message.announce .timestamp {
-            text-align: center;
-        }
+        .message.ai .timestamp { text-align: left; }
+        .message.announce .timestamp { text-align: center; }
 
         .message pre {
-            background: #0a0a0a;
-            border: 1px solid #2a2a2a;
+            background: var(--bg-code);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 12px;
             overflow-x: auto;
@@ -260,7 +415,7 @@ HTML_TEMPLATE = '''
         }
 
         .message :not(pre) > code {
-            background: #2a2a2a;
+            background: var(--bg-tertiary);
             padding: 2px 6px;
             border-radius: 4px;
         }
@@ -270,28 +425,21 @@ HTML_TEMPLATE = '''
             top: 8px;
             right: 8px;
             padding: 4px 8px;
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
             border-radius: 4px;
-            color: #888;
+            color: var(--text-secondary);
             font-size: 0.75rem;
             cursor: pointer;
             opacity: 0;
             transition: opacity 0.2s, background 0.2s;
         }
 
-        .message pre:hover .copy-btn {
-            opacity: 1;
-        }
-
-        .copy-btn:hover {
-            background: #3a3a3a;
-            color: #aaa;
-        }
+        .message pre:hover .copy-btn { opacity: 1; }
+        .copy-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
 
         .message h1, .message h2, .message h3 {
             margin: 12px 0 8px;
-            color: #e0e0e0;
         }
 
         .message h1 { font-size: 1.4em; }
@@ -311,11 +459,9 @@ HTML_TEMPLATE = '''
             border-left: 3px solid #4a4a4a;
             margin: 8px 0;
             padding-left: 12px;
-            color: #a0a0a0;
         }
 
         .message a {
-            color: #6a9fb5;
             text-decoration: none;
         }
 
@@ -347,22 +493,18 @@ HTML_TEMPLATE = '''
             display: none;
             align-self: flex-start;
             padding: 12px 16px;
-            background: #1a1a1a;
-            border: 1px solid #333;
+            background: var(--bg-message-ai);
+            border: 1px solid var(--border-message);
             border-radius: 16px;
             border-bottom-left-radius: 4px;
         }
 
-        .typing-indicator.show {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
+        .typing-indicator.show { display: flex; gap: 4px; align-items: center; }
 
         .typing-indicator span {
             width: 8px;
             height: 8px;
-            background: #555;
+            background: var(--text-muted);
             border-radius: 50%;
             animation: bounce 1.4s infinite ease-in-out;
         }
@@ -377,8 +519,8 @@ HTML_TEMPLATE = '''
 
         .input-area {
             padding: 16px;
-            background: #0a0a0a;
-            border-top: 1px solid #222;
+            background: var(--bg-primary);
+            border-top: 1px solid var(--border-color);
             display: flex;
             gap: 12px;
             align-items: center;
@@ -387,12 +529,12 @@ HTML_TEMPLATE = '''
 
         #upload {
             padding: 14px 16px;
-            background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-            border: 1px solid #3a3a3a;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
             border-radius: 24px;
-            color: #888;
+            color: var(--text-secondary);
             cursor: pointer;
-            transition: background 0.2s, color 0.2s;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -400,26 +542,20 @@ HTML_TEMPLATE = '''
         }
 
         #upload:hover {
-            background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
-            color: #aaa;
+            background: var(--bg-secondary);
+            color: var(--accent);
+            border-color: var(--accent);
         }
-
-        #upload svg {
-            width: 20px;
-            height: 20px;
-        }
-
-        #file-input {
-            display: none;
-        }
+        #upload svg { width: 20px; height: 20px; }
+        #file-input { display: none; }
 
         #message {
             flex: 1;
             padding: 10px 18px;
-            border: 1px solid #2a2a2a;
+            border: 1px solid var(--border-color);
             border-radius: 24px;
-            background: #161616;
-            color: #e0e0e0;
+            background: var(--bg-input);
+            color: var(--text-primary);
             font-size: 1rem;
             outline: none;
             transition: border-color 0.2s, box-shadow 0.2s;
@@ -432,55 +568,40 @@ HTML_TEMPLATE = '''
         }
 
         #message:focus {
-            border-color: #555;
-            box-shadow: 0 0 0 3px rgba(80, 80, 80, 0.3);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
-        #message::placeholder {
-            color: #555;
-        }
-
-        #message:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        #message::placeholder { color: var(--text-muted); }
+        #message:disabled { opacity: 0.5; cursor: not-allowed; }
 
         #send {
             padding: 14px 24px;
-            background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
-            border: 1px solid #444;
+            background: var(--button-bg);
+            border: 1px solid var(--accent);
             border-radius: 24px;
-            color: #e0e0e0;
+            color: var(--text-primary);
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.1s, background 0.2s;
+            transition: transform 0.1s, background 0.2s, box-shadow 0.2s;
             flex-shrink: 0;
         }
-        #send.hidden {
-            display: none;
-        }
 
+        #send.hidden { display: none; }
         #send:hover {
-            background: linear-gradient(135deg, #444 0%, #333 100%);
+            background: var(--button-hover);
+            box-shadow: 0 0 15px var(--accent-glow);
         }
-
-        #send:active {
-            transform: scale(0.96);
-        }
-
-        #send:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
+        #send:active { transform: scale(0.96); }
+        #send:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
         #stop {
             padding: 14px 24px;
-            background: linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%);
-            border: 1px solid #6a3a3a;
+            background: var(--error-bg);
+            border: 1px solid var(--error-border);
             border-radius: 24px;
-            color: #e0e0e0;
+            color: var(--error);
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
@@ -489,34 +610,17 @@ HTML_TEMPLATE = '''
             display: none;
         }
 
-        #stop:hover {
-            background: linear-gradient(135deg, #6a3a3a 0%, #4a2a2a 100%);
+        #stop:hover { 
+            background: linear-gradient(135deg, #5a2a2a 0%, #4a1a1a 100%);
+            box-shadow: 0 0 15px rgba(248, 113, 113, 0.3);
         }
+        #stop:active { transform: scale(0.96); }
+        #stop.show { display: block; }
 
-        #stop:active {
-            transform: scale(0.96);
-        }
-
-        #stop.show {
-            display: block;
-        }
-
-        .chat-container::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .chat-container::-webkit-scrollbar-track {
-            background: #0a0a0a;
-        }
-
-        .chat-container::-webkit-scrollbar-thumb {
-            background: #2a2a2a;
-            border-radius: 3px;
-        }
-
-        .chat-container::-webkit-scrollbar-thumb:hover {
-            background: #3a3a3a;
-        }
+        .chat-container::-webkit-scrollbar { width: 6px; }
+        .chat-container::-webkit-scrollbar-track { background: var(--bg-primary); }
+        .chat-container::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+        .chat-container::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
         @media (max-width: 600px) {
             header {
@@ -594,13 +698,34 @@ HTML_TEMPLATE = '''
 </head>
 <body>
     <div class="app-container">
-        <header>
-            <div class="header-left">
-                <div class="status-dot" id="status"></div>
-                <h1>AI Chat</h1>
-            </div>
+    <header>
+        <div class="header-left">
+            <div class="status-dot" id="status"></div>
+            <h1>AI Chat</h1>
+        </div>
+        <div class="header-right">
+            <button class="header-btn" id="settings-btn" onclick="toggleSettings()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
             <button class="header-btn" onclick="clearChat()">Clear</button>
-        </header>
+        </div>
+    </header>
+
+    <!-- Settings Modal -->
+    <div class="settings-overlay" id="settings-overlay" onclick="closeSettings(event)"></div>
+    <div class="settings-modal" id="settings-modal">
+        <div class="settings-header">
+            <h2>Settings</h2>
+            <button class="settings-close" onclick="toggleSettings()">×</button>
+        </div>
+        <div class="settings-content">
+            <h3>Theme</h3>
+            <div class="theme-grid" id="theme-grid"></div>
+        </div>
+    </div>
         <div class="chat-container" id="chat">
             <div class="typing-indicator" id="typing">
                 <span></span><span></span><span></span>
@@ -689,11 +814,16 @@ HTML_TEMPLATE = '''
                     throw new Error('Server error');
                 }
             } catch (err) {
+                const wasConnected = isConnected;
+
                 if (isConnected) {
                     isConnected = false;
                     updateConnectionStatus('disconnected');
                     removeReconnectingMessage();
-                    addAnnouncement('Disconnected from server', false, false, true);
+                    addAnnouncement('Disconnected from server. Reconnecting...', false, false, true);
+                    scheduleReconnect();
+                } else if (!hasShownReconnecting) {
+                    // Not connected and haven't shown reconnecting message yet
                     scheduleReconnect();
                 }
             }
@@ -710,7 +840,7 @@ HTML_TEMPLATE = '''
             // Show reconnecting message only once
             if (!hasShownReconnecting) {
                 hasShownReconnecting = true;
-                reconnectingMsgEl = addAnnouncement('Reconnecting...', false, false, true);
+                reconnectingMsgEl = addAnnouncement('Reconnecting...', "info");
                 if (reconnectingMsgEl) {
                     reconnectingMsgEl.classList.add('reconnecting');
                 }
@@ -724,10 +854,6 @@ HTML_TEMPLATE = '''
             }, delay);
         }
 
-        // Start connection monitoring
-        connectionCheckInterval = setInterval(checkConnection, 5000);
-        updateConnectionStatus('connecting');
-        checkConnection(); // Initial check
 
         marked.setOptions({
             breaks: true,
@@ -798,7 +924,7 @@ HTML_TEMPLATE = '''
             div.appendChild(ts);
 
             chat.insertBefore(div, typing);
-            chat.scrollTop = chat.scrollHeight;
+            scrollToBottomDelayed();
             return div;
         }
 
@@ -817,7 +943,22 @@ HTML_TEMPLATE = '''
                 }
                 createMessageElement(role, content, timeStr);
             }
-            chat.scrollTop = chat.scrollHeight;
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            requestAnimationFrame(() => {
+                chat.scrollTop = chat.scrollHeight;
+            });
+        }
+
+        // Use a more aggressive scroll for streaming
+        function scrollToBottomDelayed() {
+            setTimeout(() => {
+                requestAnimationFrame(() => {
+                    chat.scrollTop = chat.scrollHeight;
+                });
+            }, 10);
         }
 
         function setInputState(disabled, showTyping = false, showStop = false) {
@@ -1000,7 +1141,7 @@ HTML_TEMPLATE = '''
                 const data = await response.json();
                 if (data.messages) {
                     for (const msg of data.messages) {
-                        addAnnouncement(msg.content, msg.important, msg.error, msg.info);
+                        addAnnouncement(msg.content, msg.type);
                         lastAnnouncementId = msg.id;
                     }
                 }
@@ -1008,12 +1149,12 @@ HTML_TEMPLATE = '''
                 console.error('Poll error:', err);
                 isConnected = false;
                 updateConnectionStatus('disconnected');
-                addAnnouncement('Disconnected from server. Reconnecting...', false, false, true);
+                addAnnouncement('Disconnected from server. Reconnecting...', "info");
                 scheduleReconnect();
             }
         }
 
-        function addAnnouncement(content, type = nil) {
+        function addAnnouncement(content, type = null) {
             const div = document.createElement('div');
             div.className = 'message announce';
             if (type) div.classList.add(type);
@@ -1026,7 +1167,7 @@ HTML_TEMPLATE = '''
             } else {
                 chat.insertBefore(div, typing);
             }
-            chat.scrollTop = chat.scrollHeight;
+            scrollToBottom();
         }
 
         setInterval(() => {
@@ -1035,7 +1176,7 @@ HTML_TEMPLATE = '''
 
         async function send() {
             if (!isConnected) {
-                addAnnouncement('Cannot send message - not connected to server', false, true);
+                addAnnouncement('Cannot send message - not connected to server', "error");
                 return;
             }
 
@@ -1121,7 +1262,7 @@ HTML_TEMPLATE = '''
                                         tsEl.className = 'timestamp';
                                         aiMsg.appendChild(tsEl);
                                     }
-                                    chat.scrollTop = chat.scrollHeight;
+                                    scrollToBottomDelayed();
                                 }
                                 if (data.done) {
                                     aiMsg.innerHTML = renderMarkdown(aiContent);
@@ -1164,9 +1305,7 @@ HTML_TEMPLATE = '''
                 setInputState(false, false, false);
                 isStreaming = false;
                 currentController = null;
-                if (!isAborted) {
-                    currentAiMsg = null;
-                }
+                currentAiMsg = null;
                 inputField.focus();
             }
         }
@@ -1224,13 +1363,1237 @@ HTML_TEMPLATE = '''
             inputField.focus();
         }
 
-        loadHistory();
+    </script>
 
-        updateConnectionStatus('connecting');
-        checkConnection();
+    <script>
+        // == Themes! ==
+        // Theme definitions
+const themes = {
+        'dark-black': {
+            name: 'Black',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#0a0a0a',
+                '--bg-secondary': '#111111',
+                '--bg-tertiary': '#1a1a1a',
+                '--bg-message-user': 'linear-gradient(135deg, #3a3a3a 0%, #2d2d2d 100%)',
+                '--bg-message-ai': '#1a1a1a',
+                '--bg-message-announce': 'linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #1a2a1a 0%, #0f1f0f 100%)',
+                '--bg-input': '#161616',
+                '--bg-code': '#0a0a0a',
+                '--border-color': '#2a2a2a',
+                '--border-message': '#333333',
+                '--border-user': '#444444',
+                '--text-primary': '#e0e0e0',
+                '--text-secondary': '#a0a0a0',
+                '--text-muted': '#666666',
+                '--text-code': '#d0d0d0',
+                '--accent': '#555555',
+                '--accent-glow': 'rgba(255, 255, 255, 0.3)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%)',
+                '--button-hover': 'linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#2a2a2a',
+                '--scrollbar-hover': '#3a3a3a'
+            }
+        },
+        'dark-gray': {
+            name: 'Gray',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#1a1a1a',
+                '--bg-secondary': '#242424',
+                '--bg-tertiary': '#2e2e2e',
+                '--bg-message-user': 'linear-gradient(135deg, #404040 0%, #363636 100%)',
+                '--bg-message-ai': '#2e2e2e',
+                '--bg-message-announce': 'linear-gradient(135deg, #383838 0%, #2e2e2e 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #2e382e 0%, #243024 100%)',
+                '--bg-input': '#2a2a2a',
+                '--bg-code': '#1a1a1a',
+                '--border-color': '#404040',
+                '--border-message': '#484848',
+                '--border-user': '#505050',
+                '--text-primary': '#f0f0f0',
+                '--text-secondary': '#b0b0b0',
+                '--text-muted': '#808080',
+                '--text-code': '#e0e0e0',
+                '--accent': '#60a0f0',
+                '--accent-glow': 'rgba(96, 160, 240, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #404040 0%, #303030 100%)',
+                '--button-hover': 'linear-gradient(135deg, #505050 0%, #404040 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#404040',
+                '--scrollbar-hover': '#505050'
+            }
+        },
+        'dark-pink': {
+            name: 'Pink',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#1a0a14',
+                '--bg-secondary': '#24101c',
+                '--bg-tertiary': '#2e1828',
+                '--bg-message-user': 'linear-gradient(135deg, #482838 0%, #3a2030 100%)',
+                '--bg-message-ai': '#2e1828',
+                '--bg-message-announce': 'linear-gradient(135deg, #382030 0%, #2e1828 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #283028 0%, #202820 100%)',
+                '--bg-input': '#201018',
+                '--bg-code': '#1a0a14',
+                '--border-color': '#482840',
+                '--border-message': '#503048',
+                '--border-user': '#583850',
+                '--text-primary': '#f0d0e0',
+                '--text-secondary': '#c090a8',
+                '--text-muted': '#886878',
+                '--text-code': '#e0b8d0',
+                '--accent': '#f060a0',
+                '--accent-glow': 'rgba(240, 96, 160, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #482838 0%, #382030 100%)',
+                '--button-hover': 'linear-gradient(135deg, #583848 0%, #482838 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#482840',
+                '--scrollbar-hover': '#583850'
+            }
+        },
+        'dark-magenta': {
+            name: 'Magenta',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#140a18',
+                '--bg-secondary': '#201024',
+                '--bg-tertiary': '#2c1830',
+                '--bg-message-user': 'linear-gradient(135deg, #482850 0%, #3a2040 100%)',
+                '--bg-message-ai': '#2c1830',
+                '--bg-message-announce': 'linear-gradient(135deg, #382038 0%, #2c1830 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #283028 0%, #202820 100%)',
+                '--bg-input': '#1c101e',
+                '--bg-code': '#140a18',
+                '--border-color': '#482850',
+                '--border-message': '#503058',
+                '--border-user': '#583860',
+                '--text-primary': '#f0d0f0',
+                '--text-secondary': '#c898c8',
+                '--text-muted': '#906890',
+                '--text-code': '#e0b0e0',
+                '--accent': '#c060d0',
+                '--accent-glow': 'rgba(192, 96, 208, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #482850 0%, #382040 100%)',
+                '--button-hover': 'linear-gradient(135deg, #583860 0%, #482850 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#482850',
+                '--scrollbar-hover': '#583860'
+            }
+        },
+        'dark-violet': {
+            name: 'Violet',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#100a18',
+                '--bg-secondary': '#1a1028',
+                '--bg-tertiary': '#241836',
+                '--bg-message-user': 'linear-gradient(135deg, #402860 0%, #342050 100%)',
+                '--bg-message-ai': '#241836',
+                '--bg-message-announce': 'linear-gradient(135deg, #302048 0%, #241836 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #203028 0%, #182820 100%)',
+                '--bg-input': '#180e24',
+                '--bg-code': '#100a18',
+                '--border-color': '#403060',
+                '--border-message': '#483868',
+                '--border-user': '#504070',
+                '--text-primary': '#e8d0f8',
+                '--text-secondary': '#b898d0',
+                '--text-muted': '#8068a0',
+                '--text-code': '#d8b0f0',
+                '--accent': '#9060e0',
+                '--accent-glow': 'rgba(144, 96, 224, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #402860 0%, #302050 100%)',
+                '--button-hover': 'linear-gradient(135deg, #503870 0%, #402860 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#403060',
+                '--scrollbar-hover': '#504070'
+            }
+        },
+        'dark-purple': {
+            name: 'Purple',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#0e0a14',
+                '--bg-secondary': '#18101e',
+                '--bg-tertiary': '#221828',
+                '--bg-message-user': 'linear-gradient(135deg, #382850 0%, #2c2040 100%)',
+                '--bg-message-ai': '#221828',
+                '--bg-message-announce': 'linear-gradient(135deg, #282038 0%, #221828 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #182820 0%, #142018 100%)',
+                '--bg-input': '#140e1a',
+                '--bg-code': '#0e0a14',
+                '--border-color': '#382850',
+                '--border-message': '#403058',
+                '--border-user': '#483860',
+                '--text-primary': '#e0d0f0',
+                '--text-secondary': '#b090c8',
+                '--text-muted': '#785898',
+                '--text-code': '#d0a8e8',
+                '--accent': '#9858d8',
+                '--accent-glow': 'rgba(152, 88, 216, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #382850 0%, #282040 100%)',
+                '--button-hover': 'linear-gradient(135deg, #483860 0%, #382850 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#382850',
+                '--scrollbar-hover': '#483860'
+            }
+        },
+        'dark-blue': {
+            name: 'Blue',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#0a0e14',
+                '--bg-secondary': '#101820',
+                '--bg-tertiary': '#182430',
+                '--bg-message-user': 'linear-gradient(135deg, #283850 0%, #203038 100%)',
+                '--bg-message-ai': '#182430',
+                '--bg-message-announce': 'linear-gradient(135deg, #203040 0%, #182430 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #183020 0%, #142818 100%)',
+                '--bg-input': '#0c1218',
+                '--bg-code': '#0a0e14',
+                '--border-color': '#283850',
+                '--border-message': '#304060',
+                '--border-user': '#384868',
+                '--text-primary': '#d0e0f0',
+                '--text-secondary': '#90b0d0',
+                '--text-muted': '#5878a0',
+                '--text-code': '#b0d0f0',
+                '--accent': '#4090e0',
+                '--accent-glow': 'rgba(64, 144, 224, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #283850 0%, #183038 100%)',
+                '--button-hover': 'linear-gradient(135deg, #384860 0%, #283850 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#283850',
+                '--scrollbar-hover': '#384860'
+            }
+        },
+        'dark-green': {
+            name: 'Green',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#0a140e',
+                '--bg-secondary': '#101c14',
+                '--bg-tertiary': '#182820',
+                '--bg-message-user': 'linear-gradient(135deg, #284038 0%, #1c3828 100%)',
+                '--bg-message-ai': '#182820',
+                '--bg-message-announce': 'linear-gradient(135deg, #204030 0%, #183020 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #283820 0%, #1c2818 100%)',
+                '--bg-input': '#0c140e',
+                '--bg-code': '#0a140e',
+                '--border-color': '#284030',
+                '--border-message': '#305038',
+                '--border-user': '#385840',
+                '--text-primary': '#c8e8d0',
+                '--text-secondary': '#80c090',
+                '--text-muted': '#487058',
+                '--text-code': '#a8e0b8',
+                '--accent': '#50c870',
+                '--accent-glow': 'rgba(80, 200, 112, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #284038 0%, #183828 100%)',
+                '--button-hover': 'linear-gradient(135deg, #385048 0%, #284038 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#284030',
+                '--scrollbar-hover': '#385038'
+            }
+        },
+        'dark-red': {
+            name: 'Red',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#14100e',
+                '--bg-secondary': '#201814',
+                '--bg-tertiary': '#2e2018',
+                '--bg-message-user': 'linear-gradient(135deg, #503028 0%, #442820 100%)',
+                '--bg-message-ai': '#2e2018',
+                '--bg-message-announce': 'linear-gradient(135deg, #403028 0%, #302018 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #304028 0%, #243020 100%)',
+                '--bg-input': '#1a100e',
+                '--bg-code': '#14100e',
+                '--border-color': '#503828',
+                '--border-message': '#584030',
+                '--border-user': '#604838',
+                '--text-primary': '#f0d8d0',
+                '--text-secondary': '#c89080',
+                '--text-muted': '#905850',
+                '--text-code': '#e8b8a8',
+                '--accent': '#e06050',
+                '--accent-glow': 'rgba(224, 96, 80, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #503028 0%, #402820 100%)',
+                '--button-hover': 'linear-gradient(135deg, #604038 0%, #503028 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#503828',
+                '--scrollbar-hover': '#604838'
+            }
+        },
+        'dark-sepia': {
+            name: 'Sepia',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#1a1510',
+                '--bg-secondary': '#242018',
+                '--bg-tertiary': '#302820',
+                '--bg-message-user': 'linear-gradient(135deg, #483828 0%, #3c3020 100%)',
+                '--bg-message-ai': '#302820',
+                '--bg-message-announce': 'linear-gradient(135deg, #403020 0%, #302818 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #304828 0%, #243820 100%)',
+                '--bg-input': '#20180c',
+                '--bg-code': '#1a1510',
+                '--border-color': '#483820',
+                '--border-message': '#504028',
+                '--border-user': '#584830',
+                '--text-primary': '#f0e0d0',
+                '--text-secondary': '#c8a878',
+                '--text-muted': '#907850',
+                '--text-code': '#e8d0b8',
+                '--accent': '#c09050',
+                '--accent-glow': 'rgba(192, 144, 80, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #483828 0%, #383020 100%)',
+                '--button-hover': 'linear-gradient(135deg, #584838 0%, #483828 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#483820',
+                '--scrollbar-hover': '#584830'
+            }
+        },
+        'dark-silver': {
+            name: 'Silver',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#18181c',
+                '--bg-secondary': '#222228',
+                '--bg-tertiary': '#2e2e36',
+                '--bg-message-user': 'linear-gradient(135deg, #4a4a56 0%, #3e3e48 100%)',
+                '--bg-message-ai': '#2e2e36',
+                '--bg-message-announce': 'linear-gradient(135deg, #3a3a44 0%, #2e2e36 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #324034 0%, #28342a 100%)',
+                '--bg-input': '#201f24',
+                '--bg-code': '#18181c',
+                '--border-color': '#484854',
+                '--border-message': '#525260',
+                '--border-user': '#5c5c6a',
+                '--text-primary': '#e8e8f0',
+                '--text-secondary': '#b0b0c0',
+                '--text-muted': '#787890',
+                '--text-code': '#d0d0e0',
+                '--accent': '#8088a0',
+                '--accent-glow': 'rgba(128, 136, 160, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #4a4a56 0%, #3a3a46 100%)',
+                '--button-hover': 'linear-gradient(135deg, #5a5a66 0%, #4a4a56 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#484854',
+                '--scrollbar-hover': '#585864'
+            }
+        },
+        'dark-gold': {
+            name: 'Gold',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#141210',
+                '--bg-secondary': '#201c18',
+                '--bg-tertiary': '#2c2820',
+                '--bg-message-user': 'linear-gradient(135deg, #484028 0%, #3c3820 100%)',
+                '--bg-message-ai': '#2c2820',
+                '--bg-message-announce': 'linear-gradient(135deg, #403828 0%, #2c2818 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #284030 0%, #203828 100%)',
+                '--bg-input': '#1c1810',
+                '--bg-code': '#141210',
+                '--border-color': '#584830',
+                '--border-message': '#605038',
+                '--border-user': '#685840',
+                '--text-primary': '#f0e8c8',
+                '--text-secondary': '#c8b878',
+                '--text-muted': '#907848',
+                '--text-code': '#e8d8a0',
+                '--accent': '#d0a040',
+                '--accent-glow': 'rgba(208, 160, 64, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #484028 0%, #3c3820 100%)',
+                '--button-hover': 'linear-gradient(135deg, #585038 0%, #484028 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#584830',
+                '--scrollbar-hover': '#685840'
+            }
+        },
+        'dark-rosegold': {
+            name: 'Rose Gold',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#18120e',
+                '--bg-secondary': '#221a16',
+                '--bg-tertiary': '#302420',
+                '--bg-message-user': 'linear-gradient(135deg, #503830 0%, #44302a 100%)',
+                '--bg-message-ai': '#302420',
+                '--bg-message-announce': 'linear-gradient(135deg, #483028 0%, #302420 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #284030 0%, #20382a 100%)',
+                '--bg-input': '#1e1410',
+                '--bg-code': '#18120e',
+                '--border-color': '#583828',
+                '--border-message': '#604030',
+                '--border-user': '#684838',
+                '--text-primary': '#f0d8d0',
+                '--text-secondary': '#c89888',
+                '--text-muted': '#906058',
+                '--text-code': '#e8c0b0',
+                '--accent': '#c87868',
+                '--accent-glow': 'rgba(200, 120, 104, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #503830 0%, #403028 100%)',
+                '--button-hover': 'linear-gradient(135deg, #604840 0%, #503830 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#583828',
+                '--scrollbar-hover': '#684838'
+            }
+        },
+        'dark-catpuccin': {
+            name: 'Catpuccin',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#1e1e2e',
+                '--bg-secondary': '#181825',
+                '--bg-tertiary': '#313244',
+                '--bg-message-user': 'linear-gradient(135deg, #45475a 0%, #3b3b4f 100%)',
+                '--bg-message-ai': '#313244',
+                '--bg-message-announce': 'linear-gradient(135deg, #3a3b4a 0%, #313244 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #2e3a2e 0%, #243024 100%)',
+                '--bg-input': '#1e1e2e',
+                '--bg-code': '#11111b',
+                '--border-color': '#45475a',
+                '--border-message': '#585b70',
+                '--border-user': '#6c6f85',
+                '--text-primary': '#cdd6f4',
+                '--text-secondary': '#bac2de',
+                '--text-muted': '#6c7086',
+                '--text-code': '#a6adc8',
+                '--accent': '#cba6f7',
+                '--accent-glow': 'rgba(203, 166, 247, 0.4)',
+                '--error': '#f38ba8',
+                '--error-bg': 'linear-gradient(135deg, #453038 0%, #352028 100%)',
+                '--error-border': '#6c4050',
+                '--important': '#f9e2af',
+                '--important-bg': 'linear-gradient(135deg, #454030 0%, #353520 100%)',
+                '--important-border': '#6c6050',
+                '--info': '#89dceb',
+                '--info-bg': 'linear-gradient(135deg, #283545 0%, #182535 100%)',
+                '--info-border': '#405068',
+                '--button-bg': 'linear-gradient(135deg, #45475a 0%, #35374a 100%)',
+                '--button-hover': 'linear-gradient(135deg, #585b70 0%, #45475a 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#45475a',
+                '--scrollbar-hover': '#585b70'
+            }
+        },
+        'dark-brown': {
+            name: 'Brown',
+            mode: 'dark',
+            vars: {
+                '--bg-primary': '#14100c',
+                '--bg-secondary': '#201a14',
+                '--bg-tertiary': '#2e2820',
+                '--bg-message-user': 'linear-gradient(135deg, #483a28 0%, #3c3020 100%)',
+                '--bg-message-ai': '#2e2820',
+                '--bg-message-announce': 'linear-gradient(135deg, #403828 0%, #2e2820 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #304830 0%, #243824 100%)',
+                '--bg-input': '#1a140e',
+                '--bg-code': '#14100c',
+                '--border-color': '#504028',
+                '--border-message': '#584830',
+                '--border-user': '#605038',
+                '--text-primary': '#e8d8c8',
+                '--text-secondary': '#b89870',
+                '--text-muted': '#806850',
+                '--text-code': '#d0c0a8',
+                '--accent': '#a07840',
+                '--accent-glow': 'rgba(160, 120, 64, 0.4)',
+                '--error': '#f08080',
+                '--error-bg': 'linear-gradient(135deg, #3a1a1a 0%, #2a0a0a 100%)',
+                '--error-border': '#5a2a2a',
+                '--important': '#dada80',
+                '--important-bg': 'linear-gradient(135deg, #3a3a1a 0%, #2a2a0a 100%)',
+                '--important-border': '#5a5a2a',
+                '--info': '#80b0d0',
+                '--info-bg': 'linear-gradient(135deg, #1a2a3a 0%, #0a1a2a 100%)',
+                '--info-border': '#2a4a6a',
+                '--button-bg': 'linear-gradient(135deg, #483a28 0%, #383020 100%)',
+                '--button-hover': 'linear-gradient(135deg, #584a38 0%, #483a28 100%)',
+                '--button-stop': 'linear-gradient(135deg, #5a2a2a 0%, #3a1a1a 100%)',
+                '--scrollbar': '#504028',
+                '--scrollbar-hover': '#605038'
+            }
+        },
+        // Light themes
+        'light-black': {
+            name: 'Black',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#ffffff',
+                '--bg-secondary': '#f8f8f8',
+                '--bg-tertiary': '#f0f0f0',
+                '--bg-message-user': 'linear-gradient(135deg, #e8e8e8 0%, #e0e0e0 100%)',
+                '--bg-message-ai': '#f5f5f5',
+                '--bg-message-announce': 'linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e8f0e8 0%, #e0ebe0 100%)',
+                '--bg-input': '#ffffff',
+                '--bg-code': '#f8f8f8',
+                '--border-color': '#d0d0d0',
+                '--border-message': '#c8c8c8',
+                '--border-user': '#b8b8b8',
+                '--text-primary': '#1a1a1a',
+                '--text-secondary': '#505050',
+                '--text-muted': '#909090',
+                '--text-code': '#303030',
+                '--accent': '#000000',
+                '--accent-glow': 'rgba(0, 0, 0, 0.2)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #e8e8e8 0%, #d8d8d8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #d0d0d0 0%, #c0c0c0 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#c0c0c0',
+                '--scrollbar-hover': '#a0a0a0'
+            }
+        },
+        'light-gray': {
+            name: 'Gray',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#f5f5f5',
+                '--bg-secondary': '#e8e8e8',
+                '--bg-tertiary': '#dcdcdc',
+                '--bg-message-user': 'linear-gradient(135deg, #d8d8d8 0%, #d0d0d0 100%)',
+                '--bg-message-ai': '#e0e0e0',
+                '--bg-message-announce': 'linear-gradient(135deg, #d8d8d8 0%, #e8e8e8 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #d8e8d8 0%, #d0e0d0 100%)',
+                '--bg-input': '#f0f0f0',
+                '--bg-code': '#e8e8e8',
+                '--border-color': '#b8b8b8',
+                '--border-message': '#a8a8a8',
+                '--border-user': '#989898',
+                '--text-primary': '#202020',
+                '--text-secondary': '#484848',
+                '--text-muted': '#808080',
+                '--text-code': '#383838',
+                '--accent': '#6080a0',
+                '--accent-glow': 'rgba(96, 128, 160, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #d8d8d8 0%, #c8c8c8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #c0c0c0 0%, #b0b0b0 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#b0b0b0',
+                '--scrollbar-hover': '#909090'
+            }
+        },
+        'light-pink': {
+            name: 'Pink',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#fff8fa',
+                '--bg-secondary': '#fff0f4',
+                '--bg-tertiary': '#f8e8ec',
+                '--bg-message-user': 'linear-gradient(135deg, #f8d8e4 0%, #f0d0dc 100%)',
+                '--bg-message-ai': '#f8f0f4',
+                '--bg-message-announce': 'linear-gradient(135deg, #f8e0e8 0%, #fff0f4 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#fff8fa',
+                '--bg-code': '#fff0f4',
+                '--border-color': '#e8b8c8',
+                '--border-message': '#d8a8b8',
+                '--border-user': '#c898a8',
+                '--text-primary': '#2a1820',
+                '--text-secondary': '#684858',
+                '--text-muted': '#a08090',
+                '--text-code': '#483040',
+                '--accent': '#d06090',
+                '--accent-glow': 'rgba(208, 96, 144, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #f8d8e4 0%, #f0d0dc 100%)',
+                '--button-hover': 'linear-gradient(135deg, #f0c8d8 0%, #e8c0d0 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#e0b0c0',
+                '--scrollbar-hover': '#c090a0'
+            }
+        },
+        'light-magenta': {
+            name: 'Magenta',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#fff8fc',
+                '--bg-secondary': '#fcf0f8',
+                '--bg-tertiary': '#f8e8f4',
+                '--bg-message-user': 'linear-gradient(135deg, #f8d8f0 0%, #f0d0e8 100%)',
+                '--bg-message-ai': '#f8f0f8',
+                '--bg-message-announce': 'linear-gradient(135deg, #f8e0f0 0%, #fcf0f8 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e8 0%, #d8ecd8 100%)',
+                '--bg-input': '#fff8fc',
+                '--bg-code': '#fcf0f8',
+                '--border-color': '#e8b0d8',
+                '--border-message': '#d8a0c8',
+                '--border-user': '#c890b8',
+                '--text-primary': '#281828',
+                '--text-secondary': '#684868',
+                '--text-muted': '#a080a0',
+                '--text-code': '#483048',
+                '--accent': '#b060c8',
+                '--accent-glow': 'rgba(176, 96, 200, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #f8d8f0 0%, #f0d0e8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #f0c8e8 0%, #e8c0e0 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#e0a0d0',
+                '--scrollbar-hover': '#c080b0'
+            }
+        },
+        'light-violet': {
+            name: 'Violet',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#faf8ff',
+                '--bg-secondary': '#f6f0fc',
+                '--bg-tertiary': '#f0e8f8',
+                '--bg-message-user': 'linear-gradient(135deg, #e8d8f8 0%, #e0d0f0 100%)',
+                '--bg-message-ai': '#f4f0f8',
+                '--bg-message-announce': 'linear-gradient(135deg, #f0e0f8 0%, #f6f0fc 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e8 0%, #d8ecd8 100%)',
+                '--bg-input': '#faf8ff',
+                '--bg-code': '#f6f0fc',
+                '--border-color': '#d0b8e8',
+                '--border-message': '#c0a8d8',
+                '--border-user': '#b098c8',
+                '--text-primary': '#201830',
+                '--text-secondary': '#484068',
+                '--text-muted': '#8080a0',
+                '--text-code': '#302850',
+                '--accent': '#9060c0',
+                '--accent-glow': 'rgba(144, 96, 192, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #e8d8f8 0%, #e0d0f0 100%)',
+                '--button-hover': 'linear-gradient(135deg, #e0c8f0 0%, #d8c0e8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#c8b0e0',
+                '--scrollbar-hover': '#a890c0'
+            }
+        },
+        'light-purple': {
+            name: 'Purple',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#faf8fc',
+                '--bg-secondary': '#f6f0f8',
+                '--bg-tertiary': '#eee8f4',
+                '--bg-message-user': 'linear-gradient(135deg, #e8d8f4 0%, #e0d0ec 100%)',
+                '--bg-message-ai': '#f2f0f8',
+                '--bg-message-announce': 'linear-gradient(135deg, #ede0f4 0%, #f6f0f8 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e8 0%, #d8ecd8 100%)',
+                '--bg-input': '#faf8fc',
+                '--bg-code': '#f6f0f8',
+                '--border-color': '#d0b0e0',
+                '--border-message': '#c0a0d0',
+                '--border-user': '#b090c0',
+                '--text-primary': '#28182c',
+                '--text-secondary': '#583868',
+                '--text-muted': '#9078a0',
+                '--text-code': '#382848',
+                '--accent': '#a060c8',
+                '--accent-glow': 'rgba(160, 96, 200, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #e8d8f4 0%, #e0d0ec 100%)',
+                '--button-hover': 'linear-gradient(135deg, #e0c8f0 0%, #d8c0e8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#c8a8d8',
+                '--scrollbar-hover': '#a888b8'
+            }
+        },
+        'light-blue': {
+            name: 'Blue',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#f8faff',
+                '--bg-secondary': '#f0f4fc',
+                '--bg-tertiary': '#e8ecf8',
+                '--bg-message-user': 'linear-gradient(135deg, #d8e4f8 0%, #d0dcf0 100%)',
+                '--bg-message-ai': '#f0f4fc',
+                '--bg-message-announce': 'linear-gradient(135deg, #e0e8f8 0%, #f0f4fc 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e8 0%, #d8ecd8 100%)',
+                '--bg-input': '#f8faff',
+                '--bg-code': '#f0f4fc',
+                '--border-color': '#b8c8e8',
+                '--border-message': '#a8b8d8',
+                '--border-user': '#98a8c8',
+                '--text-primary': '#182030',
+                '--text-secondary': '#384868',
+                '--text-muted': '#7888a8',
+                '--text-code': '#283858',
+                '--accent': '#4080c0',
+                '--accent-glow': 'rgba(64, 128, 192, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #d8e4f8 0%, #d0dcf0 100%)',
+                '--button-hover': 'linear-gradient(135deg, #c8d8f0 0%, #c0d0e8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#b0c0e0',
+                '--scrollbar-hover': '#90a0c0'
+            }
+        },
+        'light-green': {
+            name: 'Green',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#f8fff8',
+                '--bg-secondary': '#f0fcf0',
+                '--bg-tertiary': '#e8f8e8',
+                '--bg-message-user': 'linear-gradient(135deg, #d8f0d8 0%, #d0ecd0 100%)',
+                '--bg-message-ai': '#f0fcf0',
+                '--bg-message-announce': 'linear-gradient(135deg, #e0f8e0 0%, #f0fcf0 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e8f0d8 0%, #e0ecd0 100%)',
+                '--bg-input': '#f8fff8',
+                '--bg-code': '#f0fcf0',
+                '--border-color': '#a8d0a8',
+                '--border-message': '#98c098',
+                '--border-user': '#88b088',
+                '--text-primary': '#182818',
+                '--text-secondary': '#386838',
+                '--text-muted': '#709870',
+                '--text-code': '#285828',
+                '--accent': '#40a060',
+                '--accent-glow': 'rgba(64, 160, 96, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #d8f0d8 0%, #d0ecd0 100%)',
+                '--button-hover': 'linear-gradient(135deg, #c8e8c8 0%, #c0e0c0 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#a0d0a0',
+                '--scrollbar-hover': '#80b080'
+            }
+        },
+        'light-red': {
+            name: 'Red',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#fffcfc',
+                '--bg-secondary': '#fcf4f4',
+                '--bg-tertiary': '#f8ecec',
+                '--bg-message-user': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--bg-message-ai': '#fcf4f4',
+                '--bg-message-announce': 'linear-gradient(135deg, #f8e0e0 0%, #fcf4f4 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#fffcfc',
+                '--bg-code': '#fcf4f4',
+                '--border-color': '#d8b0b0',
+                '--border-message': '#c8a0a0',
+                '--border-user': '#b89090',
+                '--text-primary': '#281818',
+                '--text-secondary': '#683838',
+                '--text-muted': '#a08080',
+                '--text-code': '#482828',
+                '--accent': '#c04040',
+                '--accent-glow': 'rgba(192, 64, 64, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--button-hover': 'linear-gradient(135deg, #e8c8c8 0%, #e0c0c0 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#d0a0a0',
+                '--scrollbar-hover': '#b08080'
+            }
+        },
+        'light-sepia': {
+            name: 'Sepia',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#faf8f4',
+                '--bg-secondary': '#f6f0e8',
+                '--bg-tertiary': '#f0e8dc',
+                '--bg-message-user': 'linear-gradient(135deg, #f0e0d0 0%, #e8d8c8 100%)',
+                '--bg-message-ai': '#f6f0e8',
+                '--bg-message-announce': 'linear-gradient(135deg, #f0e4d8 0%, #f6f0e8 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#faf8f4',
+                '--bg-code': '#f6f0e8',
+                '--border-color': '#d8c8a8',
+                '--border-message': '#c8b898',
+                '--border-user': '#b8a888',
+                '--text-primary': '#2a2018',
+                '--text-secondary': '#684828',
+                '--text-muted': '#a08060',
+                '--text-code': '#483018',
+                '--accent': '#a08040',
+                '--accent-glow': 'rgba(160, 128, 64, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #f0e0d0 0%, #e8d8c8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #e8d8c0 0%, #e0d0b8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#d0c0a0',
+                '--scrollbar-hover': '#b0a080'
+            }
+        },
+        'light-silver': {
+            name: 'Silver',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#fafafa',
+                '--bg-secondary': '#f4f4f4',
+                '--bg-tertiary': '#ececec',
+                '--bg-message-user': 'linear-gradient(135deg, #e4e4e4 0%, #dcdcdc 100%)',
+                '--bg-message-ai': '#f0f0f0',
+                '--bg-message-announce': 'linear-gradient(135deg, #e8e8e8 0%, #f4f4f4 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0e8e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#fafafa',
+                '--bg-code': '#f4f4f4',
+                '--border-color': '#c8c8c8',
+                '--border-message': '#b8b8b8',
+                '--border-user': '#a8a8a8',
+                '--text-primary': '#202020',
+                '--text-secondary': '#505050',
+                '--text-muted': '#808080',
+                '--text-code': '#303030',
+                '--accent': '#7088a0',
+                '--accent-glow': 'rgba(112, 136, 160, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #e4e4e4 0%, #dcdcdc 100%)',
+                '--button-hover': 'linear-gradient(135deg, #d4d4d4 0%, #cccccc 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#c0c0c0',
+                '--scrollbar-hover': '#a0a0a0'
+            }
+        },
+        'light-gold': {
+            name: 'Gold',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#fffcf4',
+                '--bg-secondary': '#fcf8ec',
+                '--bg-tertiary': '#f8f0d8',
+                '--bg-message-user': 'linear-gradient(135deg, #f8e8c8 0%, #f0e0b8 100%)',
+                '--bg-message-ai': '#fcf8ec',
+                '--bg-message-announce': 'linear-gradient(135deg, #f8ecc0 0%, #fcf8ec 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#fffcf4',
+                '--bg-code': '#fcf8ec',
+                '--border-color': '#d8c088',
+                '--border-message': '#c8b078',
+                '--border-user': '#b8a068',
+                '--text-primary': '#2a2010',
+                '--text-secondary': '#684820',
+                '--text-muted': '#a08050',
+                '--text-code': '#483010',
+                '--accent': '#b09040',
+                '--accent-glow': 'rgba(176, 144, 64, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #f8e8c8 0%, #f0e0b8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #f0e0b8 0%, #e8d8a8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#d0c088',
+                '--scrollbar-hover': '#b0a068'
+            }
+        },
+        'light-rosegold': {
+            name: 'Rose Gold',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#fffcfa',
+                '--bg-secondary': '#fcf4f0',
+                '--bg-tertiary': '#f8ece4',
+                '--bg-message-user': 'linear-gradient(135deg, #f8e4d8 0%, #f0d8c8 100%)',
+                '--bg-message-ai': '#fcf4f0',
+                '--bg-message-announce': 'linear-gradient(135deg, #f8e4dc 0%, #fcf4f0 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#fffcfa',
+                '--bg-code': '#fcf4f0',
+                '--border-color': '#d8b8a8',
+                '--border-message': '#c8a898',
+                '--border-user': '#b89888',
+                '--text-primary': '#2a1818',
+                '--text-secondary': '#684038',
+                '--text-muted': '#a08078',
+                '--text-code': '#483028',
+                '--accent': '#b87868',
+                '--accent-glow': 'rgba(184, 120, 104, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #f8e4d8 0%, #f0d8c8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #f0dcc8 0%, #e8d4b8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#d0b0a0',
+                '--scrollbar-hover': '#b09080'
+            }
+        },
+        'light-catpuccin': {
+            name: 'Catpuccin',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#eff1f5',
+                '--bg-secondary': '#e6e9ef',
+                '--bg-tertiary': '#dce0e8',
+                '--bg-message-user': 'linear-gradient(135deg, #ccd0da 0%, #bcc0cc 100%)',
+                '--bg-message-ai': '#e6e9ef',
+                '--bg-message-announce': 'linear-gradient(135deg, #d0d4de 0%, #e6e9ef 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #d0e6d0 0%, #c8dcc8 100%)',
+                '--bg-input': '#eff1f5',
+                '--bg-code': '#e6e9ef',
+                '--border-color': '#bcc0cc',
+                '--border-message': '#acb0bc',
+                '--border-user': '#9ca0ac',
+                '--text-primary': '#4c4f69',
+                '--text-secondary': '#5c5f72',
+                '--text-muted': '#8c8fa1',
+                '--text-code': '#5c5f72',
+                '--accent': '#8839ef',
+                '--accent-glow': 'rgba(136, 57, 239, 0.3)',
+                '--error': '#d20f39',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#df8e1d',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#179299',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #ccd0da 0%, #bcc0cc 100%)',
+                '--button-hover': 'linear-gradient(135deg, #bcc0cc 0%, #acb0bc 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#bcc0cc',
+                '--scrollbar-hover': '#acb0bc'
+            }
+        },
+        'light-brown': {
+            name: 'Brown',
+            mode: 'light',
+            vars: {
+                '--bg-primary': '#faf8f4',
+                '--bg-secondary': '#f4f0e8',
+                '--bg-tertiary': '#e8e0d4',
+                '--bg-message-user': 'linear-gradient(135deg, #e8d8c0 0%, #e0d0b8 100%)',
+                '--bg-message-ai': '#f4f0e8',
+                '--bg-message-announce': 'linear-gradient(135deg, #e8e0d0 0%, #f4f0e8 100%)',
+                '--bg-message-command': 'linear-gradient(135deg, #e0f0e0 0%, #d8ecd8 100%)',
+                '--bg-input': '#faf8f4',
+                '--bg-code': '#f4f0e8',
+                '--border-color': '#c8b898',
+                '--border-message': '#b8a888',
+                '--border-user': '#a89878',
+                '--text-primary': '#2a2018',
+                '--text-secondary': '#584828',
+                '--text-muted': '#907850',
+                '--text-code': '#483818',
+                '--accent': '#a07840',
+                '--accent-glow': 'rgba(160, 120, 64, 0.3)',
+                '--error': '#c04040',
+                '--error-bg': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--error-border': '#d8a8a8',
+                '--important': '#a08040',
+                '--important-bg': 'linear-gradient(135deg, #f8f0d8 0%, #f0e8c8 100%)',
+                '--important-border': '#d8c8a8',
+                '--info': '#4080b0',
+                '--info-bg': 'linear-gradient(135deg, #d8f0f8 0%, #c8e8f0 100%)',
+                '--info-border': '#a8c8d8',
+                '--button-bg': 'linear-gradient(135deg, #e8d8c0 0%, #e0d0b8 100%)',
+                '--button-hover': 'linear-gradient(135deg, #e0d0b8 0%, #d8c8a8 100%)',
+                '--button-stop': 'linear-gradient(135deg, #f8d8d8 0%, #f0d0d0 100%)',
+                '--scrollbar': '#c8b090',
+                '--scrollbar-hover': '#a89070'
+            }
+        }
+    };
 
-        setInterval(pollAnnouncements, 500);
+        let currentTheme = 'dark-black';
 
+        function applyTheme(themeId) {
+            const theme = themes[themeId];
+            if (!theme) return;
+
+            const root = document.documentElement;
+            for (const [varName, value] of Object.entries(theme.vars)) {
+                root.style.setProperty(varName, value);
+            }
+
+            currentTheme = themeId;
+            localStorage.setItem('theme', themeId);
+            updateThemeButtons();
+        }
+
+        function updateThemeButtons() {
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.theme === currentTheme);
+            });
+        }
+
+        function createThemeButtons() {
+            const grid = document.getElementById('theme-grid');
+            grid.innerHTML = '';
+
+            // Group by mode
+            const darkThemes = Object.entries(themes).filter(([id, t]) => t.mode === 'dark');
+            const lightThemes = Object.entries(themes).filter(([id, t]) => t.mode === 'light');
+
+            const createButtons = (themeList) => {
+                themeList.forEach(([id, theme]) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'theme-btn' + (id === currentTheme ? ' active' : '');
+                    btn.dataset.theme = id;
+
+                    // Get preview colors from theme
+                    const bgColor = theme.vars['--bg-primary'];
+                    const accentColor = theme.vars['--accent'];
+                    const textColor = theme.vars['--text-primary'];
+
+                    btn.innerHTML = `
+                        <div class="theme-preview" style="background: linear-gradient(135deg, ${bgColor} 50%, ${accentColor} 50%);"></div>
+                        ${theme.name}
+                    `;
+
+                    btn.onclick = () => applyTheme(id);
+                    grid.appendChild(btn);
+                });
+            };
+
+            createButtons(darkThemes);
+            createButtons(lightThemes);
+        }
+
+        function toggleSettings() {
+            const overlay = document.getElementById('settings-overlay');
+            const modal = document.getElementById('settings-modal');
+
+            overlay.classList.toggle('show');
+            modal.classList.toggle('show');
+        }
+
+        function closeSettings(event) {
+            if (event.target.id === 'settings-overlay') {
+                toggleSettings();
+            }
+        }
+
+        // Load saved theme on page load
+        function loadTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved && themes[saved]) {
+                applyTheme(saved);
+            } else {
+                applyTheme('dark-black');
+            }
+            createThemeButtons();
+        }
+
+    </script>
+    <script>
         // Register Service Worker for PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -1239,6 +2602,29 @@ HTML_TEMPLATE = '''
                     .catch(err => console.log('Service Worker registration failed:', err));
             });
         }
+
+        updateConnectionStatus('connecting');
+
+        // Check connection immediately and start monitoring
+        setTimeout(() => {
+            checkConnection().catch(err => {
+                // If initial check fails, start reconnecting
+                isConnected = false;
+                updateConnectionStatus('disconnected');
+                addAnnouncement('Disconnected from server. Reconnecting...', false, false, true);
+                scheduleReconnect();
+            });
+        }, 100);
+
+        // Start polling for announcements
+        setInterval(() => {
+            if (isConnected) pollAnnouncements();
+        }, 500);
+
+        loadHistory();
+
+        // Call loadTheme at startup
+        loadTheme();
     </script>
 </body>
 </html>
