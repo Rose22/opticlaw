@@ -12,15 +12,18 @@ class Channel:
         self.manager = manager
         self._help = """
 /new            start a new session (clears context window)
-/status         show status info
-/models         list available models
-/model          switch model
-/modules        list modules
-/module         enable/disable a module by name
-/tools          list tools
+/clear          same as /new
 /sysprompt      show current system prompt
 /context        show current context window
-/stop           stops a running task
+/tools          list tools available to the AI
+
+/status         show status info
+/modules        list modules
+/module         enable/disable a module by name
+
+/models         list available models
+/model          switch model
+
 /restart        restarts the server
 /stop           stops the AI in it's tracks
 /help           this help
@@ -38,6 +41,10 @@ class Channel:
 
         match cmd[0]:
             case "new":
+                self.manager.API._turns = []
+                return "New session started."
+            case "clear":
+                # alias for "new"
                 self.manager.API._turns = []
                 return "New session started."
             case "help":
@@ -67,6 +74,11 @@ class Channel:
                     return "CONTEXT DISABLED"
 
                 sysprompt = await self.manager.get_system_prompt()
+                disabled_prompts = core.config.get("modules_disable_prompts")
+                if disabled_prompts:
+                    sysprompt += "\n\n== disabled prompts ==\n"
+                    sysprompt += "\n".join([mod_name for mod_name in disabled_prompts])
+
                 return sysprompt if sysprompt else "BLANK"
             case "context":
                 if not core.config.get("context_window"):
@@ -77,15 +89,22 @@ class Channel:
                     return "BLANK"
 
                 context_display = []
+
                 for turn in context:
                     context_display.append(f"== {turn.get('role')} ==\n{turn.get('content')}")
+
+                context_display.append("---")
+
+                disabled_prompts = core.config.get("modules_disable_prompts")
+                if disabled_prompts:
+                    disabled_prompts_str = "\n".join([mod_name for mod_name in disabled_prompts])
+                    context_display.append(f"== disabled prompts ==\n{disabled_prompts_str}")
 
                 ctx_string = ""
                 context_size = await self.manager.API.get_context_size()
                 for key, value in context_size.items():
                     ctx_string += f"{key}: {value}\n"
-                context_display.append("---")
-                context_display.append(ctx_string)
+                context_display.append(f"== context size ==\n{ctx_string}")
 
                 return "\n\n".join(context_display)
             case "restart":

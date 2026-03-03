@@ -14,8 +14,9 @@ default_config = {
     "webui_port": "5000",
     "channels": ["cli", "webui"],
     "channels_disabled": [],
-    "modules": ["identity", "memory", "scheduler"],
+    "modules": [],
     "modules_disabled": [],
+    "modules_disable_prompts": [],
     "max_turns": 20,
     "context_window": True
 }
@@ -30,7 +31,9 @@ for channel in channels.get_all(respect_config=False):
 
 for module in modules.get_all(respect_config=False):
     module_name = core.module.get_name(module)
-    if module_name not in ("identity", "memory", "scheduler"):
+    if module_name in ("identity", "memory", "scheduler"):
+        default_config["modules"].append(module_name)
+    else:
         default_config["modules_disabled"].append(module_name)
 
 if not config:
