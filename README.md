@@ -9,10 +9,10 @@ AI Disclaimer: Everything in opticlaw was coded by hand, with the exception of  
 Features:
 - Connects to any OpenAI API-compatible backend. That includes local AI (llamacpp, ollama, koboldcpp, and so on) and many cloud AI providers.
 - Fully private and self-hosted, if you want it to be. You could also run it on a cloud server.
-- Modular. You can turn any component on or off, including what other claw clones consider core components. Shell access is disabled by default for security.
+- Modular. You can turn any component on or off, including what other claw clones consider core components. Shell access is just a module and is disabled by default for security.
 - Supports multiple communication channels. Right now that's the terminal, web UI, and discord, but i'll be adding more.
-- Scheduler system, like openclaw's cronjobs but written from scratch
-- Laser focused on token efficiency. You can see how big the context window (input tokens) is at any time, and even see exactly what's being sent
+- Scheduler system that allows you to schedule tasks for the AI to do. Like openclaw's cronjobs but written from scratch!
+- Laser focused on token efficiency. You can see how big the context window (input tokens) is at any time, and even see exactly what's being sent.
 - Fluid identity. The AI can define its own identity! Uses a simple custom system, not IDENTITY.md. Much more token-efficient. It's a module, so you can just turn it off!
 - Memory system! Works by letting the AI save memories, or having you ask it to. Also a module, so you can simply turn it off! Saves data in messagepack format, which is compact and very fast.
 - Command system that bypasses the AI completely. Lets you do things like force restart the server using `/restart` no matter what the AI is doing.
@@ -29,6 +29,87 @@ pip install -r requirements.txt
 ```
 
 Run it once. It will create a folder called `data`, and inside it, a file called `config.yml`. Set up your API url and key there, and customize opticlaw to your liking!
+
+# How to create your own channel
+
+It's really simple! It's just a python class with a few special methods/functions. If you're familiar with python, this'll be very easy for you:
+
+```python
+import core
+
+# extend the class from core.channel.Channel to get all the required functionality
+class ChannelExample(core.channel.Channel):
+    """
+    To make a channel, subclass from `core.channel.Channel`.
+    Make sure to `import core`
+
+    A channel is the main way the user can communicate back and forth with the AI.
+    This can be something like the CLI, a discord bot, telegram, whatever you want.
+    It's designed to be modular and easy to make new channels for the system to use.
+    """
+
+    async def run(self):
+        """
+        Main loop goes here!
+
+        Ask for input somehow, and then use the channel's built in send() and send_stream() functions (defined in core.channel.Channel) to communicate with the AI.
+
+        send() will return the AI's response as a string
+        send_stream() will return an object that you can iterate over using `async for token in send_stream(...)`
+
+        Make sure to use asyncio conventions, such as await for send(), and `async for` for send_stream()
+        """
+        core.log("example channel", "Channel is working!")
+
+        while True:
+            user_input = input("> ")
+            # specify the role the message should be sent as, and the message content
+            response = await self.send("user", user_input)
+            print(response)
+
+    async def announce(self, message: str):
+        """
+        This function will be called by other parts of the framework when the channel should push a message out to the user.
+        You can use it within tools, for example to send a notification or reminder to the user!
+        """
+        core.log("example channel", message)
+```
+
+# How to create your own module
+Like channels, a module is just a simple class that you can extend/subclass from. It has a few special methods that can be used to talk to the rest of the framework!
+
+```python
+import core
+
+class MyModule(core.module.Module):
+    """
+    To make a channel, subclass from `core.module.Module`
+    Make sure to `import core`
+
+    Modules can use self.manager to access the manager object, and self.manager.channel to access the current channel!
+
+    You can use all the channel's features from there, like send(), send_stream(), and announce(). See the channel example for details!
+    """
+
+    async def my_tool(self, some_text: str, a_number: int):
+        """
+        The docstrings contain instructions for the AI.
+        The AI will see them and use them to determine what to do!
+
+        It has a special section, Args. Use it to further instruct the AI on what each argument does. It automatically gets added to the argument list for the AI to look at.
+
+        Args:
+            some_text: just some text. put whatever you want here, AI!
+            a_number: put a random number here
+        """
+
+    async def on_system_prompt(self):
+        return "Hi! I'm a system prompt! I'll be inserted automatically into the system prompt (above conversation history)"
+
+    async def on_ready(self):
+        """This method will run once the module is ready to be used. Use it instead of __init__() if you can."""
+        self.manager.channel.announce("i'm up i swear!")
+```
 
 ## ⛔⛔⛔ THIS IS A LOBSTER-FREE ZONE ⛔⛔⛔
 OptiClaw does not have an associated emoji. You can add it to it's identity if you want, but it doesn't force it on you. Also, cats have claws too, where is the love for the cats?
