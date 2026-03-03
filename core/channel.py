@@ -20,6 +20,7 @@ class Channel:
 /sysprompt      show current system prompt
 /stop           stops a running task
 /restart        restarts the server
+/stop           stops the AI in it's tracks
 /help           this help
 """.strip()
 
@@ -67,11 +68,14 @@ class Channel:
                 else:
                     return "BLANK"
             case "restart":
-                await self.announce_all("restarting..")
-                time.sleep(0.5)
+                await self.announce_all("restarting server..")
+                time.sleep(0.1)
                 os.execv(sys.argv[0], sys.argv)
             case "stop":
-                return "Not implemented yet"
+                # just use restart for now until i figure out how to kill the asyncio tasks
+                await self.announce_all("stopping..")
+                time.sleep(0.1)
+                os.execv(sys.argv[0], sys.argv)
             case _:
                 return self._help
 
