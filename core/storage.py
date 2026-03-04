@@ -2,7 +2,6 @@ import core
 import os
 import json
 import yaml
-import toml
 import msgpack
 
 DATADIR = "data"

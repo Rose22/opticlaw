@@ -9,4 +9,3 @@ import core.config
 import core.modules
 import core.api_client
 import core.manager
-import core.scheduler

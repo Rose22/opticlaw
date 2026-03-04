@@ -112,6 +112,10 @@ class MyModule(core.module.Module):
     async def on_ready(self):
         """This method will run once the module is ready to be used. Use it instead of __init__() if you can."""
         self.manager.channel.announce("i'm up i swear!")
+
+    async def on_background(self):
+        """This method will be added as a background task that will run contineously in the background. Use it for things like schedulers, cronjobs, etc!"""
+        return False
 ```
 
 ## ⛔⛔⛔ THIS IS A LOBSTER-FREE ZONE ⛔⛔⛔

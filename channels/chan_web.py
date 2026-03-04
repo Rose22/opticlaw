@@ -3779,7 +3779,7 @@ def delete_message():
 
     if 0 <= index <= len(turns):
         if turns[index]['role'] != "user":
-            return jsonify({"success": False, error: f"Tried to delete a system message!"})
+            return jsonify({"success": False, "error": f"Tried to delete a system message!"})
 
         removed_count = len(turns) - index
         # Keep only messages before the index

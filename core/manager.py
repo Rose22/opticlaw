@@ -15,12 +15,11 @@ class Manager:
 
     # --- main ---
     def __init__(self):
+        self._async_tasks = set()
         self.API = None # connect later with .connect()
-        self.scheduler = core.scheduler.Scheduler()
         self.channels = {}
         self.channel = None # current active channel. gets dynamically switched around
         self.modules = {}
-        self.module_instances = {}
         self.tools = []
 
     def connect(self, *args, **kwargs):
@@ -36,13 +35,12 @@ class Manager:
 
         return self.API
 
+    def _remove_async_task(self, task):
+        self._async_tasks.discard(task)
+        core.log("task", f"background task completed: {task.get_name()}")
+
     async def run(self):
         """main loop"""
-        tasks = []
-
-        # start scheduler
-        tasks.append(asyncio.create_task(self.scheduler.run()))
-
         # load channels
         if not core.config.get("channels"):
             print("ERROR: At least one channel must be enabled in the config! Try the `cli` channel for a basic terminal UI.")
@@ -59,7 +57,7 @@ class Manager:
 
         # start channels
         for channel_name, channel in self.channels.items():
-            tasks.append(asyncio.create_task(channel.run()))
+            self._async_tasks.add(asyncio.create_task(channel.run()))
             core.log("init", f"started channel {channel_name}")
 
         # load modules
@@ -70,7 +68,17 @@ class Manager:
                 # only load enabled modules
                 module_name_snakecase = core.modules.get_name(module)
                 if module_name_snakecase in core.config.get("modules", []):
-                    await self.add_module_class(module)
+                    loaded_module = await self.add_module_class(module)
+                    # run startup methods
+                    if hasattr(loaded_module, "on_ready"):
+                        await loaded_module.on_ready()
+                    if hasattr(loaded_module, "on_background"):
+                        if not core.module.is_empty_coroutine(loaded_module.on_background):
+                            task = asyncio.create_task(loaded_module.on_background(), name=module_name_snakecase)
+                            task.add_done_callback(self._remove_async_task)
+                            self._async_tasks.add(task)
+                            core.log("init", f"started background task {module_name_snakecase}")
+
                     loaded_module_names.append(module_name_snakecase)
             core.log("init", f"modules loaded: {', '.join(loaded_module_names)}")
         else:
@@ -84,7 +92,7 @@ class Manager:
         print("---\n")
 
         # run everything
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*self._async_tasks)
 
     async def get_system_prompt(self):
         system_prompt = []
@@ -106,10 +114,6 @@ class Manager:
                 else:
                     sysprompt_middle.append(prompt_chunk)
 
-        if self.channel:
-            chan = core.module.get_name(self.channel)
-            sysprompt_bottom.append(f"current channel: {chan}")
-
         system_prompt = sysprompt_top+sysprompt_middle+sysprompt_bottom
 
         if system_prompt:
@@ -121,6 +125,21 @@ class Manager:
             system_prompt.append(prompt_length_text)
 
             return "\n\n".join(system_prompt)
+        else:
+            return ""
+
+    async def get_end_prompt(self):
+        #W automatically insert system prompts returned by modules (such as memory)
+        histend_prompt = []
+        for module_name, module in self.modules.items():
+            module_sysprompt = await module.on_end_prompt()
+
+            if module_sysprompt and (module_name not in core.config.get("modules_disable_end_prompts", [])):
+                prompt_chunk = f"# {' '.join(module_name.split('_')).capitalize()}\n{str(module_sysprompt).strip()}"
+                histend_prompt.append(prompt_chunk)
+
+        if histend_prompt:
+            return "\n\n".join(histend_prompt)
         else:
             return ""
 
@@ -239,7 +258,6 @@ class Manager:
         loaded_module.channel = self.channel
 
         class_display_name = core.modules.get_name(module)
-        await loaded_module.on_ready()
         self.modules[class_display_name] = loaded_module
 
         for func_name in dir(module):
@@ -269,6 +287,7 @@ class Manager:
 
             # only get class methods with a self parameter
             if not func_params.get("self"):
+                core.log("error", f"class method {func_name} skipped because it didn't have required `self` argument.")
                 continue
 
             # remove "self" arg from func
@@ -317,6 +336,8 @@ class Manager:
             }
 
             self.tools.append(tool)
+
+        return loaded_module
 
     async def handle_tool_calls(self, tool_calls):
         results = []

@@ -17,12 +17,19 @@ class Module:
         }
 
     async def on_system_prompt(self):
-        """overridable method that will insert it's return value into the system prompt if something is returned (defaults to None)"""
+        """Overridable method that will insert it's return value into the system prompt if something is returned (defaults to None)"""
+        return None
+    async def on_end_prompt(self):
+        """Overridable method that will insert it's return value into the end of the context (after the conversation history) if something is returned (defaults to None). Useful for things that change frequently, such as the time. Using the prompt at the end of conversation history means history does not have to be reprocessed if the prompt changes."""
         return None
 
     async def on_ready(self):
-        """overridable method that runs when first loading the module"""
+        """This method will run once the module is ready to be used. Use it instead of __init__() if you can."""
         return None
+
+    async def on_background(self):
+        """This method will be added as a background task that will run contineously in the background. Use it for things like schedulers, cronjobs, etc!"""
+        return False
 
 def load(package, base_class, respect_config: bool = True):
     """
@@ -89,3 +96,34 @@ def get_name(obj):
     name_snakecase = re.sub(re_snakecase, r'_\1', name).lower()
 
     return name_snakecase
+
+
+def is_empty_coroutine(func):
+    """
+    Checks if a coroutine function body is effectively empty
+    (only contains 'pass', '...', or docstrings).
+    """
+    try:
+        # Get the source code lines of the function
+        source_lines, _ = inspect.getsourcelines(func)
+        source = "".join(source_lines)
+
+        # Remove the function definition line (def ...)
+        # This regex is simple; it looks for the first 'def ...' and strips it
+        body = re.sub(r"^\s*(async\s+)?def\s+\w+\(.*?\):\s*", "", source, count=1)
+
+        # Remove docstrings (simple heuristic)
+        body = re.sub(r'""".*?"""', '', body, flags=re.DOTALL)
+        body = re.sub(r"'''.*?'''", '', body, flags=re.DOTALL)
+
+        # Remove comments and whitespace
+        body = re.sub(r'#.*', '', body)
+        body = body.strip()
+
+        # If what remains is just 'pass' or '...' or empty string, it's empty.
+        return not body or body in ('pass', '...')
+
+    except (TypeError, OSError):
+        # Fallback if source cannot be retrieved (e.g., built-in or dynamic)
+        # We assume it's not empty to be safe.
+        return False

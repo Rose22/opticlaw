@@ -108,11 +108,15 @@ class Channel:
                 if not core.config.get("context_window"):
                     return "CONTEXT DISABLED"
 
-                sysprompt = await self.manager.get_system_prompt()
+                _sysprompt = await self.manager.get_system_prompt()
+                sysprompt = f"=== system prompt ===\n{_sysprompt}"
                 disabled_prompts = core.config.get("modules_disable_prompts")
                 if disabled_prompts:
-                    sysprompt += "\n\n== disabled prompts ==\n"
+                    sysprompt += "\n\n=== disabled prompts ===\n"
                     sysprompt += "\n".join([mod_name for mod_name in disabled_prompts])
+                endprompt = await self.manager.get_end_prompt()
+                if endprompt:
+                    sysprompt += f"\n\n=== end prompts ===\n{endprompt}"
 
                 return sysprompt if sysprompt else "BLANK"
             case "context":

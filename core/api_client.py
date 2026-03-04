@@ -48,7 +48,8 @@ class APIClient():
             "model": self._model,
             "messages": context,
             "tools": kwargs.get("tools", None),
-            "stream": kwargs.get("stream", False)
+            "stream": kwargs.get("stream", False),
+            "temperature": core.config.get("model_temperature", 0.2)
         }
 
         if debug:
@@ -72,22 +73,32 @@ class APIClient():
         # insert turn history
         context = context+self._turns
 
+        if system_prompt:
+            histend = await self.manager.get_end_prompt()
+            # for some reason, it won't accept a 2nd system prompt. so we add it as user
+            # maybe theres a better way to do this..
+            context = context+[{"role": "user", "content": histend}]
+
         return context
 
     async def get_context_size(self):
         turn_history = await self.build_context(system_prompt=False)
         sysprompt = await self.manager.get_system_prompt()
-        turn_hist_size_chars = len(str(turn_history))
-        turn_hist_size_words = len(str(turn_history).split())
+        histend = await self.manager.get_end_prompt()
         sysprompt_size_chars = len(str(sysprompt))
         sysprompt_size_words = len(str(sysprompt).split())
+        turn_hist_size_chars = len(str(turn_history))
+        turn_hist_size_words = len(str(turn_history).split())
+        histend_size_chars = len(str(histend))
+        histend_size_words = len(str(histend).split())
 
-        combined_size_chars = turn_hist_size_chars+sysprompt_size_chars
-        combined_size_words = turn_hist_size_words+sysprompt_size_words
+        combined_size_chars = turn_hist_size_chars+sysprompt_size_chars+histend_size_chars
+        combined_size_words = turn_hist_size_words+sysprompt_size_words+histend_size_words
 
         return {
             "system prompt size": f"{sysprompt_size_chars} characters | {sysprompt_size_words} words",
-            "turn history size": f"{turn_hist_size_chars} characters | {sysprompt_size_words} words",
+            "turn history size": f"{turn_hist_size_chars} characters | {turn_hist_size_words} words",
+            "end prompt size": f"{histend_size_chars} characters | {histend_size_words} words",
             "total size": f"{combined_size_chars} characters | {combined_size_words} words"
         }
 
@@ -99,7 +110,7 @@ class APIClient():
         if channel:
             self.manager.channel = channel
 
-        if use_context == None and use_context != False:
+        if use_context is None:
             use_context = core.config.get("context_window", True)
 
         context = []
@@ -130,7 +141,7 @@ class APIClient():
         if channel:
             self.manager.channel = channel
 
-        if use_context == None and use_context != False:
+        if use_context is None:
             use_context = core.config.get("context_window", True)
 
         context = []
@@ -144,7 +155,7 @@ class APIClient():
         # use default tools if not specified. allow overrides
         if not tools:
             tools = self.manager.tools
-            
+
         try:
             async for token in self._recv_stream(self._request(context, tools=(tools if use_tools else None), stream=True, debug=debug, **kwargs), **kwargs, debug=debug):
                 yield token
@@ -200,8 +211,8 @@ class APIClient():
                     return
 
                 streamed_token = chunk.choices[0].delta
-                if debug:
-                    core.log("debug:stream_chunk", chunk.choices[0].delta)
+                # if debug:
+                #     core.log("debug:stream_chunk", chunk.choices[0].delta)
 
                 # yield the current token in the stream
                 if streamed_token.content:

@@ -10,6 +10,7 @@ default_config = {
     "api_url": "http://localhost:11434/v1",
     "api_key": "KEY_HERE",
     "model": "MODEL_HERE",
+    "model_temp": 0.2,
     "webui_host": "localhost",
     "webui_port": "5000",
     "channels": ["cli", "webui"],
