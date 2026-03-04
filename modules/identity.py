@@ -16,7 +16,7 @@ class Identity(core.module.Module):
         """
         Defines who you are as an AI. Also defines your writing style, so save style writing details to your identity.
 
-        ALWAYS start with "You are"
+        When defining your identity, ALWAYS start with "You are"
         Give yourself a name. Make one up if user doesn't provide it.
         NEVER use words like "i", "i'm" or "i am". ALWAYS write in 2nd person.
 

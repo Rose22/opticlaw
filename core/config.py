@@ -32,7 +32,7 @@ for channel in channels.get_all(respect_config=False):
 
 for module in modules.get_all(respect_config=False):
     module_name = core.module.get_name(module)
-    if module_name in ("identity", "memory", "scheduler"):
+    if module_name in ("identity", "memory", "scheduler", "channel", "model", "opticlaw_manual"):
         default_config["modules"].append(module_name)
     else:
         default_config["modules_disabled"].append(module_name)

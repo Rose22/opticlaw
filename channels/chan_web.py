@@ -779,6 +779,31 @@ HTML_TEMPLATE = r"""
         .message h2 { font-size: 1.2em; }
         .message h3 { font-size: 1.1em; }
 
+        .message p {
+            margin: 8px 0;
+            min-height: 1em;
+        }
+
+        .message p:first-child {
+            margin-top: 0;
+        }
+
+        .message p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message div {
+            margin: 8px 0;
+        }
+
+        /* Preserve whitespace in all block elements */
+        .message p,
+        .message div,
+        .message li,
+        .message blockquote {
+            white-space: pre-wrap;
+        }
+
         .message ul, .message ol {
             margin: 8px 0;
             padding-left: 24px;
@@ -3486,11 +3511,6 @@ class Webui(core.channel.Channel):
         self.announcement_id = 0
         self.main_loop = None
     
-    async def on_ready(self):
-        """Called when the channel is ready to receive messages."""
-        await asyncio.sleep(2)
-        await self.announce("Server is up!")
-    
     async def run(self):
         """
         Start the Flask web server to handle HTTP requests.
@@ -3572,10 +3592,11 @@ def poll_announcements():
     messages = []
     for index, msg in enumerate(channel_instance.announcement_queue):
         if msg['id'] > last_id:
-            # add it to the messages, then remove it from the announcement queue
+            # add it to the messages
             messages.append(msg)
-            channel_instance.announcement_queue.pop(index)
 
+    # clear the queue
+    channel_instance.announcement_queue = []
     return jsonify({'messages': messages})
 
 @app.route('/stream', methods=['POST'])
@@ -3836,7 +3857,7 @@ def upload_file():
         
         # Insert the file content into the conversation
         result = f"File uploaded: {filename} ({len(content)} bytes)"
-        asyncio.run(channel_instance.manager.API.insert_turn("user", f"[File: {filename}]\n{content[:1000]}..."))
+        asyncio.run(channel_instance.manager.API.insert_turn("user", f"[File: {filename}]\n{content}..."))
         
         return jsonify({'success': True, 'message': result})
     except Exception as e:

@@ -17,6 +17,7 @@ class Manager:
     def __init__(self):
         self._async_tasks = set()
         self.API = None # connect later with .connect()
+        self.savedata = core.storage.StorageDict("save", "msgpack")
         self.channels = {}
         self.channel = None # current active channel. gets dynamically switched around
         self.modules = {}
@@ -59,6 +60,12 @@ class Manager:
         for channel_name, channel in self.channels.items():
             self._async_tasks.add(asyncio.create_task(channel.run()))
             core.log("init", f"started channel {channel_name}")
+
+        if not self.channel:
+            # attempt to restore last used channel from save data
+            last_channel = self.savedata.get("last_channel")
+            if last_channel:
+                self.channel = self.channels[last_channel]
 
         # load modules
         if core.config.get("modules"):
@@ -149,7 +156,7 @@ class Manager:
         status_list.append("API server: " + str(core.config.get("api_url")))
         if "webui" in core.config.get("channels"):
             status_list.append(f"WebUI: {core.config.get('webui_host')}:{core.config.get('webui_port')}")
-        status_list.append("AI model: " + str(core.config.get("model")))
+        status_list.append("AI model: " + str(self.API.get_model()))
 
         status_list.append("")
 

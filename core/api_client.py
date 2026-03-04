@@ -20,6 +20,9 @@ class APIClient():
 
         self.cancel_request = False
 
+    def get_model(self):
+        return self._model
+
     async def insert_turn(self, role: str, content: str):
         """inserts a turn (message with role and content) into context, trimming when needed"""
 
@@ -109,6 +112,9 @@ class APIClient():
 
         if channel:
             self.manager.channel = channel
+            # save name of last channel used for restoring from save later
+            self.manager.savedata["last_channel"] = core.module.get_name(channel)
+            self.manager.savedata.save()
 
         if use_context is None:
             use_context = core.config.get("context_window", True)
@@ -140,6 +146,9 @@ class APIClient():
 
         if channel:
             self.manager.channel = channel
+            # save name of last channel used for restoring from save later
+            self.manager.savedata["last_channel"] = core.module.get_name(channel)
+            self.manager.savedata.save()
 
         if use_context is None:
             use_context = core.config.get("context_window", True)

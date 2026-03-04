@@ -32,7 +32,6 @@ class Channel:
         self.name = self.__class__.__name__
         self.manager = manager
 
-
     async def _process_input(self, message: str):
         """processes user input and detects special commands that control opticlaw"""
         message = message.strip().lower()

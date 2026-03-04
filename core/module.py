@@ -6,8 +6,9 @@ class Module:
     """Base class for modules/plugins"""
 
     def __init__(self, manager, channel=None):
-        self.channel = channel
         self.manager = manager
+        self.channel = channel
+
 
     def result(self, data, success=True):
         """unified way of returning tool results"""

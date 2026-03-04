@@ -32,6 +32,7 @@ class Scheduler(core.module.Module):
                             )
                             if message:
                                 await self.manager.channel.announce(message, "schedule")
+                                await self.manager.API.insert_turn("assistant", message)
                                 self.schedule.pop(self._get_index(job.get("id")))
                                 self.schedule.save()
 
