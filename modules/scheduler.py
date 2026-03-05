@@ -32,7 +32,7 @@ class Scheduler(core.module.Module):
                             )
                             if message:
                                 await self.manager.channel.announce(message, "schedule")
-                                await self.manager.API.insert_turn("assistant", message)
+                                await self.manager.API.insert_message("assistant", message)
                                 self.schedule.pop(self._get_index(job.get("id")))
                                 self.schedule.save()
 
@@ -76,31 +76,26 @@ class Scheduler(core.module.Module):
                 microsecond=0
             )
 
-            # Determine repeat interval (default to daily if not specified)
-            interval_days = recur.get("days", 0)
-            if interval_days == 0:
-                interval_days = 1  # Default to daily for clock-based scheduling
-
-            # If candidate time has passed, advance to next occurrence
-            if candidate <= now:
-                if recur.get("weekdays_only"):
-                    candidate = self._advance_to_next_weekday(candidate, interval_days)
-                else:
-                    candidate += datetime.timedelta(days=interval_days)
+            # Handle specific weekday (0=Monday, 6=Sunday)
+            if recur.get("target_weekday") is not None:
+                target_weekday = recur["target_weekday"]
+                days_until_target = (target_weekday - now.weekday()) % 7
+                if days_until_target == 0 and candidate <= now:
+                    days_until_target = 7
+                candidate += datetime.timedelta(days=days_until_target)
+            
+            # Handle weekdays_only (Mon-Fri)
             elif recur.get("weekdays_only"):
-                # NEW: Even if candidate is in future, check if we need to advance to target weekday
-                # Calculate what the target weekday should be based on the interval
-                # For example: if today is Wednesday (2) and interval is 7 days, target is also Wednesday
-                # But if the job was originally scheduled for Saturday, we need to find the next Saturday
-                target_weekday = (now.weekday() + interval_days) % 7
-                
-                # If current candidate weekday doesn't match target, advance to it
-                if candidate.weekday() != target_weekday:
-                    # Find the next occurrence of the target weekday
-                    days_until_target = (target_weekday - candidate.weekday()) % 7
-                    if days_until_target == 0:
-                        days_until_target = 7  # If it's the target day but time has passed, go to next week
-                    candidate += datetime.timedelta(days=days_until_target)
+                if candidate.weekday() >= 5:  # Weekend
+                    candidate = self._advance_to_next_weekday(candidate)
+                elif candidate <= now:
+                    candidate = self._advance_to_next_weekday(candidate)
+            
+            # Handle regular daily/weekly recurrence
+            else:
+                interval_days = recur.get("days", 1)
+                if candidate <= now:
+                    candidate += datetime.timedelta(days=interval_days)
 
             return candidate
 
@@ -119,12 +114,11 @@ class Scheduler(core.module.Module):
 
         return now + delta
 
-    def _advance_to_next_weekday(self, candidate: datetime.datetime, interval_days: int = 1) -> datetime.datetime:
-        """Advances datetime to next valid weekday, respecting interval."""
-        while True:
-            candidate += datetime.timedelta(days=interval_days)
-            if candidate.weekday() < 5:  # Monday=0, Friday=4
-                return candidate
+    def _advance_to_next_weekday(self, candidate: datetime.datetime) -> datetime.datetime:
+        """Advances datetime to next valid weekday (Mon-Fri)."""
+        while candidate.weekday() >= 5:  # Saturday=5, Sunday=6
+            candidate += datetime.timedelta(days=1)
+        return candidate
 
     def _get_index(self, ulid: str):
         """checks if an ID is stored in the job list"""
@@ -132,6 +126,11 @@ class Scheduler(core.module.Module):
             if ulid == str(job.get("id")):
                 return index
         return -1
+
+    def _weekday_name(self, weekday: int) -> str:
+        """Convert weekday number to name (0=Monday, 6=Sunday)"""
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        return days[weekday]
 
     def __str__(self):
         """displays schedule as a human-readable list"""
@@ -149,7 +148,10 @@ class Scheduler(core.module.Module):
                     if display_hour == 0:
                         display_hour = 12
                     time_str = f"{display_hour}:{minute:02d} {period}"
-                    if recur.get("weekdays_only"):
+                    
+                    if recur.get("target_weekday") is not None:
+                        time_due = f"every {self._weekday_name(recur['target_weekday'])} at {time_str}"
+                    elif recur.get("weekdays_only"):
                         time_due = f"every weekday at {time_str}"
                     else:
                         interval_days = recur.get("days", 1)
@@ -202,6 +204,7 @@ class Scheduler(core.module.Module):
         target_hour: int | None = None,
         target_minute: int = 0,
         target_second: int = 0,
+        target_weekday: int | None = None,
         weekdays_only: bool = False,
         recurring: bool = False
     ):
@@ -218,9 +221,11 @@ class Scheduler(core.module.Module):
         MODE 2 - SPECIFIC CLOCK TIME:
             Use target_hour (0-23) and target_minute (0-59).
             Defaults to daily recurrence. Use days=N for longer intervals.
+            Optionally set target_weekday (0=Monday, 6=Sunday) for specific days.
             Optionally set weekdays_only=True for weekday-only schedules.
             Example: "every morning at 10am" -> target_hour=10, recurring=True
             Example: "every weekday at 9am" -> target_hour=9, weekdays_only=True, recurring=True
+            Example: "every Saturday at 3pm" -> target_hour=15, target_weekday=5, recurring=True
             Example: "every week at 3pm" -> target_hour=15, days=7, recurring=True
 
         NEVER add a job more than once!
@@ -237,6 +242,7 @@ class Scheduler(core.module.Module):
                 "target_hour": target_hour,
                 "target_minute": target_minute,
                 "target_second": target_second,
+                "target_weekday": target_weekday,
                 "weekdays_only": weekdays_only
             }
 
@@ -272,6 +278,7 @@ class Scheduler(core.module.Module):
         target_hour: int | None = None,
         target_minute: int = 0,
         target_second: int = 0,
+        target_weekday: int | None = None,
         weekdays_only: bool = False,
         recurring: bool = False
     ):
@@ -296,6 +303,7 @@ class Scheduler(core.module.Module):
                 "target_hour": target_hour,
                 "target_minute": target_minute,
                 "target_second": target_second,
+                "target_weekday": target_weekday,
                 "weekdays_only": weekdays_only
             }
 
@@ -335,3 +343,4 @@ class Scheduler(core.module.Module):
         self.schedule.pop(index)
         self.schedule.save()
         return self.result("job deleted")
+
