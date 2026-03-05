@@ -143,23 +143,22 @@ class APIClient():
         message_history = await self.build_context(system_prompt=False)
         sysprompt = await self.manager.get_system_prompt()
         histend = await self.manager.get_end_prompt()
-        sysprompt_size_chars = len(str(sysprompt))
+        sysprompt_size_tokens = self._count_tokens_local([{"role": "system", "content": sysprompt}])
         sysprompt_size_words = len(str(sysprompt).split())
-        message_hist_size_chars = len(str(message_history))
+        message_hist_size_tokens = self._count_tokens_local(self._messages)
         message_hist_size_words = len(str(message_history).split())
-        histend_size_chars = len(str(histend))
+        histend_size_tokens = self._count_tokens_local([{"role": "user", "content": histend}])
         histend_size_words = len(str(histend).split())
 
-        combined_size_chars = message_hist_size_chars+sysprompt_size_chars+histend_size_chars
         combined_size_words = message_hist_size_words+sysprompt_size_words+histend_size_words
         
         token_usage = self._count_tokens_local(await self.build_context(system_prompt=True))
 
         return {
-            "system prompt size": f"{sysprompt_size_chars} characters | {sysprompt_size_words} words",
-            "message history size": f"{message_hist_size_chars} characters | {message_hist_size_words} words",
-            "end prompt size": f"{histend_size_chars} characters | {histend_size_words} words",
-            "total size": f"{token_usage} tokens | {combined_size_chars} characters | {combined_size_words} words",
+            "system prompt size": f"{sysprompt_size_tokens} tokens | {sysprompt_size_words} words",
+            "message history size": f"{message_hist_size_tokens} tokens | {message_hist_size_words} words",
+            "end prompt size": f"{histend_size_tokens} tokens | {histend_size_words} words",
+            "total size": f"{token_usage} tokens | {combined_size_words} words",
         }
 
     async def send(self, role: str, content: str, system_prompt=True, channel=None, use_context=None, use_tools=True, tools=None, add_message=True, debug=False, **kwargs):
