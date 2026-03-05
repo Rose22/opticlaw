@@ -2108,6 +2108,8 @@ HTML_TEMPLATE = r"""
 
                     if (wasReconnecting || reconnectAttempts > 0) {
                         addAnnouncement('Reconnected to server', 'info');
+                        // push the conversation history back down into the backend
+                        loadConversation(currentConversationId);
                     }
                 }
             } else {
