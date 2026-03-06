@@ -10,6 +10,7 @@ Features:
 - Connects to any OpenAI API-compatible backend. That includes local AI (llamacpp, ollama, koboldcpp, and so on) and many cloud AI providers.
 - Fully private and self-hosted, if you want it to be. You could also run it on a cloud server.
 - Modular. You can turn any component on or off, including what other claw clones consider core components. Shell access is just a module and is disabled by default for security.
+- Not sure how to use OptiClaw? Just ask your AI running on OptiClaw! It knows everything needed to get started. Find the instructions annoying? Just ask your AI to turn off the `channel` module, or use `/module channel` to toggle it off manually.
 - Supports multiple communication channels. Right now that's the terminal, web UI, and discord, but i'll be adding more.
 - Scheduler system that allows you to schedule tasks for the AI to do. Like openclaw's cronjobs but written from scratch!
 - Laser focused on token efficiency. You can see how big the context window (input tokens) is at any time, and even see exactly what's being sent.

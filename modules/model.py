@@ -1,6 +1,6 @@
 import core
 
-class Models(core.module.Module):
+class Model(core.module.Module):
     """lets your AI help you switch between models"""
 
     def __init__(self, *args, **kwargs):
@@ -21,7 +21,7 @@ class Models(core.module.Module):
         model_list = "\n".join([model.id for model in self.models.data])
 
         if not args:
-            return model_list
+            return f"Current model: {self.manager.API.get_model()}"
 
         match args[0]:
             case "switch":
@@ -34,8 +34,9 @@ class Models(core.module.Module):
                 return "valid commands are: list, switch. check /help"
     async def on_command_help(self):
         return """
-/models list            list models
-/models switch <name>   switch to model with provided name
+/model                 show currently active model
+/model list            list models
+/model switch <name>   switch to model with provided name
 """
     async def switch(self, name: str):
         if not self.models:

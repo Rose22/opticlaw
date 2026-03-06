@@ -3,8 +3,7 @@ import os
 import sys
 import time
 import json
-
-
+import asyncio
 
 class Channel:
     """Base class for channels"""
@@ -29,9 +28,6 @@ class Channel:
 /status         show status info
 /modules        list modules
 /module         enable/disable a module by name
-
-/models         list available models
-/model          switch model
 
 /restart        restarts the server
 /stop           stops the AI in it's tracks
@@ -58,6 +54,7 @@ class Channel:
             return None
 
         cmd = message.split(cmd_prefix)[1].split()
+        args = cmd[1:]
 
         match cmd[0]:
             case "new":
@@ -77,6 +74,28 @@ class Channel:
                 modules_loaded_str = "\n".join(self.manager.modules.keys())
 
                 return f"== loaded ==\n{modules_loaded_str}\n\n== disabled ==\n{modules_disabled_str}\n"
+            case "module":
+                if not args:
+                    return "please provide a name of the module to toggle"
+
+                import modules
+                module_manager = modules.module_manager.Modules(self.manager)
+                found = False
+                for module in modules.get_all(respect_config=False):
+                    module_name = core.modules.get_name(module)
+                    print(module_name)
+                    if args[0].lower().strip() == module_name:
+                        found = True
+
+                if not found:
+                    return "module with that name doesn't exist"
+
+                await module_manager.toggle(args[0])
+                await self.announce("module toggled")
+                await self.announce("restarting to apply module change..", "error")
+                await asyncio.sleep(0.2)
+                await core.restart()
+                return
             case "prompts":
                 enabled = []
                 no_prompt = []
@@ -96,8 +115,6 @@ class Channel:
                 disabled_str = "\n".join(disabled)
                 return f"== modules with active prompts ==\n{enabled_str}\n\n== modules that don't include prompts ==\n{no_prompt_str}\n\n== modules with disabled prompts ==\n{disabled_str}"
 
-            case "module":
-                return "not implemented yet"
             case "tools":
                 tool_map = {}
                 for tool in self.manager.tools:

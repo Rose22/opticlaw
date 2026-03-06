@@ -23,8 +23,8 @@ default_config = {
 }
 
 default_modules = (
-    "modules",
-    "models",
+    "module",
+    "model",
     "memory",
     "scheduler",
     "channel"

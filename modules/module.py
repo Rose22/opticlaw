@@ -1,6 +1,10 @@
 import core
 
-class Modules(core.module.Module):
+class Module(core.module.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._header = "modules"
+
     async def on_system_prompt(self):
         module_list = {
             "enabled": ", ".join(core.config.get("modules", [])),
