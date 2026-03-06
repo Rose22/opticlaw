@@ -13,7 +13,7 @@ Features:
 - Supports multiple communication channels. Right now that's the terminal, web UI, and discord, but i'll be adding more.
 - Scheduler system that allows you to schedule tasks for the AI to do. Like openclaw's cronjobs but written from scratch!
 - Laser focused on token efficiency. You can see how big the context window (input tokens) is at any time, and even see exactly what's being sent.
-- Fluid identity. The AI can define its own identity! Uses a simple custom system, not IDENTITY.md. Much more token-efficient. It's a module, so you can just turn it off!
+- Optional character system module. Ask the AI to enable the `character` module. You can add, edit and remove characters, switch between them, and set your user profile! Just ask the AI to do those things, or use the `/character` command. Can be used as a replacement to Character.AI, Janitor AI, SillyTavern, and so on.
 - Memory system! Works by letting the AI save memories, or having you ask it to. Also a module, so you can simply turn it off! Saves data in messagepack format, which is compact and very fast.
 - Command system that bypasses the AI completely. Lets you do things like force restart the server using `/restart` no matter what the AI is doing.
 - Modules are simple python classes with a few custom functions. Very easy to develop for! A proper plugin downloading system is coming later.
@@ -68,12 +68,14 @@ class ChannelExample(core.channel.Channel):
             user_input = input("> ")
             # specify the role the message should be sent as, and the message content
             response = await self.send("user", user_input)
-            print(response)
+            self.announce(response) # don't use _announce, use announce without the _
 
-    async def announce(self, message: str):
+    async def _announce(self, message: str):
         """
         This function will be called by other parts of the framework when the channel should push a message out to the user.
         You can use it within tools, for example to send a notification or reminder to the user!
+
+        If you want to call it yourself, use .announce(), not ._announce(). Otherwise it won't properly insert the messages into context!
         """
         core.log("example channel", message)
 ```
@@ -116,6 +118,13 @@ class MyModule(core.module.Module):
     async def on_background(self):
         """This method will be added as a background task that will run contineously in the background. Use it for things like schedulers, cronjobs, etc!"""
         return False
+
+    async def on_command(self, args: list):
+        """Lets you define custom commands! The args are the string provided to the command, split into words."""
+        return None
+
+    async def on_command_help(self):
+        return "/my_command         do the thing!"
 ```
 
 ## ⛔⛔⛔ THIS IS A LOBSTER-FREE ZONE ⛔⛔⛔
