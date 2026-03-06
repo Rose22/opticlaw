@@ -4,8 +4,20 @@ import sys
 import time
 import json
 
-def get_help():
-    return """
+
+
+class Channel:
+    """Base class for channels"""
+
+    def __init__(self, manager):
+        self.name = self.__class__.__name__
+        self.manager = manager
+
+    async def _get_help(self):
+        output = []
+
+        help_text = """
+== built in commands ==
 /new            start a new session (clears context window)
 /clear          same as /new
 /sysprompt      show current system prompt
@@ -23,14 +35,19 @@ def get_help():
 /restart        restarts the server
 /stop           stops the AI in it's tracks
 /help           this help
-    """.strip()
+        """.strip()
 
-class Channel:
-    """Base class for channels"""
+        output.append(help_text)
 
-    def __init__(self, manager):
-        self.name = self.__class__.__name__
-        self.manager = manager
+        if self.manager.modules:
+            # support custom commands supplied by modules
+            for module_name, module in self.manager.modules.items():
+                if hasattr(module, "on_command_help"):
+                    cmd_help = await module.on_command_help()
+                    if cmd_help:
+                        output.append(f"== {module_name} ==\n{cmd_help}".strip())
+
+        return "\n\n".join(output)
 
     async def _process_input(self, message: str):
         """processes user input and detects special commands that control opticlaw"""
@@ -50,7 +67,7 @@ class Channel:
                 self.manager.API._messages = []
                 return "New session started."
             case "help":
-                return get_help()
+                return await self._get_help()
             case "status":
                 return "\n".join(await self.manager.get_status())
             case "models":
@@ -159,7 +176,14 @@ class Channel:
                 await self.manager.API.cancel()
                 return "stopped!"
             case _:
-                return get_help()
+                if self.manager.modules:
+                    # support custom commands supplied by modules
+                    for module_name, module in self.manager.modules.items():
+                        if hasattr(module, "on_command"):
+                            if cmd[0].lower().strip() == module_name:
+                                return await module.on_command(cmd[1:])
+
+                return await self._get_help()
 
     async def send(self, role: str, message: str, **kwargs):
         """sends a message to the AI from within the current channel"""
