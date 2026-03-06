@@ -53,5 +53,5 @@ class Cli(core.channel.Channel):
                 await self._spawn(msg)
                 print()
 
-    async def announce(self, message: str, type: str = None):
+    async def _announce(self, message: str, type: str = None):
         core.log("cli", message)

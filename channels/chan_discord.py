@@ -83,7 +83,7 @@ class Discord(core.channel.Channel):
         intents.message_content = True
         self._client = Client(self, intents=intents)
 
-    async def announce(self, msg: str, type: str = None):
+    async def _announce(self, msg: str, type: str = None):
         if not msg:
             return None
 

@@ -14,5 +14,5 @@ class Debug(core.channel.Channel):
                     print(token, end="", flush=True)
                 print()
 
-    async def announce(self, message: str, type: str = None):
+    async def _announce(self, message: str, type: str = None):
         core.log("cli", message)

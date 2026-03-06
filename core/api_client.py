@@ -54,11 +54,27 @@ class APIClient():
     def set_messages(self, messages: list):
         self._messages = messages
 
+    def _convert_message(self, role: str, content: str):
+        # Convert special roles to valid API roles with prefixes
+        if role.startswith('announce_'):
+            # announce_info, announce_error, announce_important, announce_schedule
+            ann_type = role[9:]  # 'announce_info' -> 'info'
+            content = f"[System {ann_type.title()}]: {content}"
+            role = 'user'
+        elif role == 'command':
+            # User commands stay as user role
+            role = 'user'
+        elif role == 'command_response':
+            # Command responses appear as assistant
+            content = f"[Command Output]: {content}"
+            role = 'user'
+        # i guess we just default to user for all of them, but im keeping this just in case
+        return {"role": role, "content": content}
+
     async def insert_message(self, role: str, content: str, num_tokens=None):
         """inserts a message (dict with role and content) into context, trimming when needed"""
-
         await self.trim_messages(num_tokens=num_tokens)
-        return self._messages.append({"role": role, "content": content})
+        return self._messages.append(self._convert_message(role, content))
 
     async def trim_messages(self, max_messages: int = None, max_tokens: int = None, num_tokens: int = None):
         """trims context to keep token consumption low"""

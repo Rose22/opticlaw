@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#111111">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="OptiClaw">
+    <meta name="description" content="AI Chat Interface">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>OptiClaw</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <a href="#message" class="skip-link">Skip to input</a>
+
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <div class="app-wrapper">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span class="sidebar-title">Conversations</span>
+            </div>
+            <div class="sidebar-content">
+                <div class="conv-list" id="conv-list"></div>
+            </div>
+            <div class="sidebar-footer">
+                <button class="new-conv-btn" onclick="newConversation()">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    New Conversation
+                </button>
+            </div>
+        </aside>
+
+        <div class="main-content">
+            <div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+                <div class="drop-overlay-content">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    <div style="font-size: 1.2rem; font-weight: 600;">Drop file to upload</div>
+                </div>
+            </div>
+
+            <div class="app-container">
+                <header>
+                    <div class="header-left">
+                        <button class="menu-btn" onclick="toggleSidebar()" title="Toggle sidebar">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            </svg>
+                        </button>
+                        <div class="status-dot" id="status" role="status" aria-label="Connection status"></div>
+                        <h1>AI Chat</h1>
+                    </div>
+                    <div class="header-right">
+                        <button class="header-btn" id="search-btn" onclick="toggleSearch()" title="Search messages (Ctrl+F)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                        </button>
+                        <button class="header-btn" id="settings-btn" onclick="toggleModal('settings')" title="Settings (Ctrl+S)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </button>
+                        <button class="header-btn" onclick="showExportModal()" title="Export chat">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7,10 12,15 17,10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                        </button>
+                        <button class="header-btn shortcuts-btn" onclick="showShortcutsModal()" title="Keyboard shortcuts (?)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+                                <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M6 16h12"></path>
+                            </svg>
+                        </button>
+                        <button class="header-btn" onclick="clearChat()" title="Clear chat">Clear</button>
+                    </div>
+                </header>
+
+                <div class="search-container" id="search-container">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search messages..." oninput="performSearch(this.value)">
+                    <div class="search-count" id="search-count">0 results</div>
+                    <button class="header-btn" onclick="clearSearch()">✕</button>
+                </div>
+
+                <div class="modal-overlay" id="settings-overlay" onclick="closeModalOnOverlay(event, 'settings')"></div>
+                <div class="modal" id="settings-modal" role="dialog" aria-labelledby="settings-title">
+                    <div class="modal-header">
+                        <h2 id="settings-title">Settings</h2>
+                        <button class="modal-close" onclick="toggleModal('settings')" aria-label="Close settings">×</button>
+                    </div>
+                    <div class="modal-content">
+                        <h3>Theme</h3>
+                        <div class="theme-grid" id="theme-grid"></div>
+                    </div>
+                </div>
+
+                <div class="modal-overlay" id="export-overlay" onclick="closeModalOnOverlay(event, 'export')"></div>
+                <div class="modal" id="export-modal" role="dialog" aria-labelledby="export-title">
+                    <div class="modal-header">
+                        <h2 id="export-title">Export Chat</h2>
+                        <button class="modal-close" onclick="toggleModal('export')" aria-label="Close export">×</button>
+                    </div>
+                    <div class="modal-content">
+                        <div class="export-options">
+                            <button class="export-btn" onclick="exportChat('json')">
+                                <div class="export-btn-title">JSON</div>
+                                <div class="export-btn-desc">Full chat data with metadata</div>
+                            </button>
+                            <button class="export-btn" onclick="exportChat('markdown')">
+                                <div class="export-btn-title">Markdown</div>
+                                <div class="export-btn-desc">Formatted for reading and sharing</div>
+                            </button>
+                            <button class="export-btn" onclick="exportChat('txt')">
+                                <div class="export-btn-title">Plain Text</div>
+                                <div class="export-btn-desc">Simple text format</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-overlay" id="shortcuts-overlay" onclick="closeModalOnOverlay(event, 'shortcuts')"></div>
+                <div class="modal" id="shortcuts-modal" role="dialog" aria-labelledby="shortcuts-title">
+                    <div class="modal-header">
+                        <h2 id="shortcuts-title">Keyboard Shortcuts</h2>
+                        <button class="modal-close" onclick="toggleModal('shortcuts')" aria-label="Close shortcuts">×</button>
+                    </div>
+                    <div class="modal-content">
+                        <div class="shortcuts-list">
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Send message</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">Enter</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">New line</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Shift</span><span class="shortcut-key">Enter</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Clear chat</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">L</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Settings</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">S</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Search</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">F</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Export</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">E</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Stop generation</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Escape</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-container" id="chat" role="log" aria-live="polite" aria-label="Chat messages">
+                    <div class="typing-indicator" id="typing" aria-label="AI is typing">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <button id="upload" onclick="document.getElementById('file-input').click()" title="Upload file" aria-label="Upload file">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                    </button>
+                    <input type="file" id="file-input" onchange="handleFileUpload(event)" aria-hidden="true">
+                    <textarea id="message" placeholder="Type a message..." onkeydown="handleKeyDown(event)" rows="1" aria-label="Message input"></textarea>
+                    <button id="send" onclick="send()" aria-label="Send message">Send</button>
+                    <button id="stop" onclick="stopGeneration()" aria-label="Stop generation">Stop</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/themes.js"></script>
+    <script src="/static/ui.js"></script>
+</body>
+</html>
