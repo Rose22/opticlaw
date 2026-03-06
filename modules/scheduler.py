@@ -239,6 +239,9 @@ class Scheduler(core.module.Module):
 
         NEVER add a job more than once!
         ALWAYS use the word "user" to refer to the user!
+
+        If the job is a reminder to the user, start with "Remind user to".
+        If the job is a task for you (the AI assistant) to perform, start with "You must"
         """
 
         try:

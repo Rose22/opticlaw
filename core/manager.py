@@ -115,7 +115,12 @@ class Manager:
             module_sysprompt = await module.on_system_prompt()
 
             if module_sysprompt and (module_name not in core.config.get("modules_disable_prompts", [])):
-                prompt_chunk = f"# {' '.join(module_name.split('_')).capitalize()}\n{str(module_sysprompt).strip()}"
+                # default to module name
+                sysprompt_header = ' '.join(module_name.split('_')).capitalize()
+                if hasattr(module, "_header") and module._header:
+                    # but allow overriding the header
+                    sysprompt_header = module._header
+                prompt_chunk = f"# {sysprompt_header}\n{str(module_sysprompt).strip()}"
 
                 if module_name in ("memory", "identity"):
                     sysprompt_top.append(prompt_chunk)
@@ -342,7 +347,7 @@ class Manager:
 
         return loaded_module
 
-    async def handle_tool_calls(self, tool_calls):
+    async def handle_tool_calls(self, tool_calls, use_context=True):
         # Fix broken JSON and convert to dicts
         repaired_tool_calls = []
 
@@ -371,6 +376,7 @@ class Manager:
         })
 
         # Execute each tool and add their responses
+        tool_responses = []
         for tool_call_dict in repaired_tool_calls:
             tool_name = tool_call_dict['function']['name']
             tool_args = json_repair.loads(tool_call_dict['function']['arguments'])
@@ -403,7 +409,7 @@ class Manager:
                 arg_display_str = ", ".join(arg_display)
                 announce_string = f"calling tool {tool_name}({arg_display_str})"
 
-                if self.channel:
+                if self.channel and use_context:
                     await self.channel.announce(announce_string)
                 else:
                     core.log("toolcall", announce_string)
@@ -442,7 +448,8 @@ class Manager:
             return await self.API._recv(
                 await self.API._request(prompt, tools=self.tools),
                 use_tools=True,
-                add_message=False
+                add_message=False,
+                use_context=use_context
             )
         except Exception as e:
             core.log("error", f"error while handling tool calls: {e}")

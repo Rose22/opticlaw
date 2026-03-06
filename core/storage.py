@@ -214,3 +214,48 @@ class StorageDict(dict):
                 self.update(msgpack.unpackb(data))
             case "text":
                 self.update(data.split("\n"))
+
+class StorageText:
+    """simple class that saves its content to a text file"""
+    def __init__(self, file_path, manager=None, data_dir=None, *args):
+        super().__init__(*args)
+
+        if not data_dir:
+            data_dir = "data"
+
+        # ensure it's relative to the opticlaw root directory
+        data_dir = core.get_path(data_dir)
+
+        if not os.path.exists(data_dir):
+            os.mkdir(data_dir)
+
+        self.path = core.get_path(os.path.join(data_dir, file_path))
+        self.load()
+
+    def __str__(self, *args, **kwargs):
+        return self._data
+
+    def set(self, new_data: str):
+        self._data = str(new_data)
+        self.save()
+    def get(self):
+        return str(self._data)
+
+    def load(self):
+        if not os.path.exists(self.path):
+            return False
+        try:
+            with open(self.path, "r") as f:
+                self._data = f.read()
+        except Exception as e:
+            core.log("error", f"error while loading text storage: {e}")
+        return self
+
+    def save(self):
+        if not self._data:
+            return False
+
+        with open(self.path, "w") as f:
+            f.write(self._data)
+
+        return self

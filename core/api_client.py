@@ -177,7 +177,7 @@ class APIClient():
             "total size": f"{token_usage} tokens | {combined_size_words} words",
         }
 
-    async def send(self, role: str, content: str, system_prompt=True, channel=None, use_context=None, use_tools=True, tools=None, add_message=True, **kwargs):
+    async def send(self, role: str, content: str, system_prompt=True, channel=None, use_context=True, use_tools=True, tools=None, add_message=True, **kwargs):
         """send a message to the LLM. returns a string"""
 
         self.cancel_request = False
@@ -221,7 +221,7 @@ class APIClient():
                 await self.manager.channel.announce(f"error while sending request to AI: {e}", "error")
             return None
 
-    async def send_stream(self, role: str, content: str, system_prompt=True, channel=None, use_context=None, use_tools=True, tools=None, add_message=True, **kwargs):
+    async def send_stream(self, role: str, content: str, system_prompt=True, channel=None, use_context=True, use_tools=True, tools=None, add_message=True, **kwargs):
         """send a message to the LLM. is an iterable async generator"""
 
         self.cancel_request = False
@@ -248,7 +248,7 @@ class APIClient():
             tools = self.manager.tools
 
         try:
-            async for token in self._recv_stream(await self._request(context, tools=(tools if use_tools else None), stream=True, **kwargs), context=context, **kwargs):
+            async for token in self._recv_stream(await self._request(context, tools=(tools if use_tools else None), stream=True, **kwargs), context=context, use_context=use_context, **kwargs):
                 yield token
         except Exception as e:
             core.log_error("error while sending request to AI", e)
@@ -259,7 +259,7 @@ class APIClient():
             if self.manager.channel:
                 await self.manager.channel.announce(f"error while sending request to AI: {e}", "error")
 
-    async def _recv(self, response, context=None, **kwargs):
+    async def _recv(self, response, context=None, use_context=True, **kwargs):
         """takes a response object and extracts the message from it, handling tool calls if needed"""
 
         final_content = None
@@ -278,7 +278,7 @@ class APIClient():
 
         # handle tool calls, if any
         if response_main.message.tool_calls:
-            tool_results = await self.manager.handle_tool_calls(response_main.message.tool_calls)
+            tool_results = await self.manager.handle_tool_calls(response_main.message.tool_calls, use_context=use_context)
             if tool_results:
                 final_content += str(tool_results)
 
@@ -295,7 +295,7 @@ class APIClient():
 
         return final_content
 
-    async def _recv_stream(self, response, use_tools=True, add_message=True, context=None, **kwargs):
+    async def _recv_stream(self, response, use_tools=True, add_message=True, context=None, use_context=True, **kwargs):
         """takes a response object and extracts the message from it, handling tool calls if needed. streaming version"""
         final_tool_calls = []
         tool_call_buffer = {}
@@ -347,7 +347,7 @@ class APIClient():
                 if final_tool_calls:
                     try:
                         tokens.append("\n")
-                        toolcall_results = await self.manager.handle_tool_calls(final_tool_calls)
+                        toolcall_results = await self.manager.handle_tool_calls(final_tool_calls, use_context=use_context)
                         if toolcall_results:
                             for word in toolcall_results:
                                 tokens.append(word)
