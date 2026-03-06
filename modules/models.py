@@ -51,12 +51,12 @@ class Models(core.module.Module):
         if not found:
             return "model does not exist. use models_list() first"
 
-        core.config.config["model"] = model.id
+        core.config.config["model"] = found_id
         core.config.config.save()
 
-        self.manager.API.set_model(model.id)
+        self.manager.API.set_model(found_id)
         if self.manager.channel:
-            await self.manager.channel.announce(f"Model switched to {model.id}", "info")
+            await self.manager.channel.announce(f"Model switched to {found_id}", "info")
 
-        return f"model has been set to {model.id}"
+        return f"model has been set to {found_id}"
 
