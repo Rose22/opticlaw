@@ -84,7 +84,7 @@ class Channel:
                     return "please provide a name of the module to toggle"
 
                 import modules
-                module_manager = modules.module_manager.Modules(self.manager)
+                module_manager = modules.module.Module(self.manager)
                 found = False
                 for module in modules.get_all(respect_config=False):
                     module_name = core.modules.get_name(module)
@@ -127,8 +127,15 @@ class Channel:
                     setting = " ".join(args[1:])
                     if isinstance(core.config.get(key), list):
                         return "use the respective module to change this setting"
+                    if isinstance(core.config.get(key), bool):
+                        if setting.lower() in ("true", "on"):
+                            setting = True
+                        elif setting.lower() in ("false", "off"):
+                            setting = False
+                        else:
+                            return "set this setting to either on or off"
 
-                    if setting.isdecimal():
+                    if isinstance(setting, str) and setting.isdecimal():
                         setting = int(setting)
 
                     core.config.config[key] = setting

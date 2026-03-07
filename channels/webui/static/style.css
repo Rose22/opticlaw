@@ -889,8 +889,10 @@ header h1 {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     padding: 12px;
-    overflow-x: clip;
     margin: 8px 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
     position: relative;
 }
 
@@ -1136,7 +1138,6 @@ header h1 {
     resize: none;
     min-height: 48px;
     max-height: 200px;
-    overflow: hidden;
     font-family: inherit;
     line-height: 1.4;
 }
