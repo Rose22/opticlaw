@@ -49,13 +49,17 @@ class Character(core.module.Module):
 
         user_name = self.user_profile.get("name", "User")
 
-        character_text += f"\n\nWrite your replies as {character_name} in a chat between {character_name} and {user_name}."
+        character_text += f"\nWrite your replies as {character_name} in a chat between {character_name} and {user_name}."
 
         user_profile = ""
         if self.user_profile:
             user_profile = f"## User\nName: {self.user_profile.get('name')}\nProfile: {self.user_profile.get('profile')}"
 
-        return f"{user_profile}\n\n## You\n{character_text}\n\nYou can switch between identities using character_switch(). User can switch characters using the `/character` command. Characters available to switch yourself to:\n{self._list_characters()}"
+        tool_text = ""
+        if core.config.get("tools", False):
+            tool_text = f"You can switch between identities using character_switch(). User can switch characters using the `/character` command. Characters available to switch yourself to:\n{self._list_characters()}"
+
+        return f"{user_profile}\n\n## You\n{character_text}\n\n{tool_text}"
 
     async def on_command(self, cmd: str):
         name = " ".join(cmd)

@@ -105,6 +105,7 @@ class Manager:
         await asyncio.gather(*self._async_tasks)
 
     async def get_system_prompt(self):
+        nonagentic_modules = ("character", "time")
         system_prompt = []
 
         #W automatically insert system prompts returned by modules (such as memory)
@@ -112,6 +113,10 @@ class Manager:
         sysprompt_middle = []
         sysprompt_bottom = []
         for module_name, module in self.modules.items():
+            if not core.config.get("tools", False) and module_name not in nonagentic_modules:
+                # skip most prompts if tools are turned off
+                continue
+
             module_sysprompt = await module.on_system_prompt()
 
             if module_sysprompt and (module_name not in core.config.get("modules_disable_prompts", [])):

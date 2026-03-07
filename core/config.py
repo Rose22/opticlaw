@@ -15,6 +15,7 @@ default_config = {
     "webui_port": "5000",
     "channels": ["cli", "webui"],
     "channels_disabled": [],
+    "tools": True,
     "modules": [],
     "modules_disabled": [],
     "modules_disable_prompts": [],

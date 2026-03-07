@@ -117,6 +117,10 @@ class APIClient():
     async def _request(self, context, tools=None, stream=False):
         """send a request to the LLM and return the response object"""
 
+        if not core.config.get("tools"):
+            # allow switching tools off globally
+            tools = None
+
         req = {
             "model": self._model,
             "messages": context,
@@ -280,7 +284,7 @@ class APIClient():
         final_content = response_main.message.content or ""
 
         # handle tool calls, if any
-        if response_main.message.tool_calls:
+        if core.config.get("tools", False) and response_main.message.tool_calls:
             tool_results = await self.manager.handle_tool_calls(response_main.message.tool_calls, use_context=use_context)
             if tool_results:
                 final_content += str(tool_results)
@@ -347,7 +351,7 @@ class APIClient():
                     final_tool_calls.append(tool_call)
 
                 # handle tool calls, if any
-                if final_tool_calls:
+                if final_tool_calls and core.config.get("tools", False):
                     try:
                         tokens.append("\n")
                         toolcall_results = await self.manager.handle_tool_calls(final_tool_calls, use_context=use_context)

@@ -162,6 +162,9 @@ class Channel:
                 return f"== modules with active prompts ==\n{enabled_str}\n\n== modules that don't include prompts ==\n{no_prompt_str}\n\n== modules with disabled prompts ==\n{disabled_str}"
 
             case "tools":
+                if not core.config.get("tools", False):
+                    return "tools are turned off"
+
                 tool_map = {}
                 for tool in self.manager.tools:
                     tool_name = tool.get("function").get("name")
