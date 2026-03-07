@@ -18,20 +18,24 @@ class Channel:
 
         help_text = """
 == built in commands ==
-/new            start a new session (clears context window)
-/clear          same as /new
-/sysprompt      show current system prompt
-/prompts        show which modules are injecting prompts into the system prompt
-/context        show current context window
-/tools          list tools available to the AI
+/new                    start a new session (clears context window)
+/clear                  same as /new
+/sysprompt              show current system prompt
+/prompts                show which modules are injecting prompts into the system prompt
+/context                show current context window
+/tools                  list tools available to the AI
 
-/status         show status info
-/modules        list modules
-/module         enable/disable a module by name
+/status                 show status info
+/modules                list modules
+/module                 enable/disable a module by name
 
-/restart        restarts the server
-/stop           stops the AI in it's tracks
-/help           this help
+/set                    shows you all settings
+/set <name>             shows you the value of a setting
+/set <name> <value>     sets a setting to that value
+
+/restart                restarts the server
+/stop                   stops the AI in it's tracks
+/help                   this help
         """.strip()
 
         output.append(help_text)
@@ -97,6 +101,40 @@ class Channel:
                 await asyncio.sleep(0.2)
                 await core.restart()
                 return
+            case "set":
+                if not args:
+                    display_list = []
+                    for key, value in core.config.config.items():
+                        if not isinstance(value, list):
+                            if "_key" in key or "_token" in key:
+                                value = "******"
+
+                            display_list.append(f"{key}: {value}")
+                    return "\n".join(display_list)
+
+                key = args[0].lower()
+                if key not in core.config.config.keys():
+                    return "that setting does not exist"
+
+                if len(args) < 2:
+                    # show value
+                    return core.config.get(key)
+                else:
+                    if key in ("api_url", "api_key"):
+                        return "it is unsafe to modify API settings while opticlaw is running. please manually edit the config file."
+
+                    # set value
+                    setting = " ".join(args[1:])
+                    if isinstance(core.config.get(key), list):
+                        return "use the respective module to change this setting"
+
+                    if setting.isdecimal():
+                        setting = int(setting)
+
+                    core.config.config[key] = setting
+                    core.config.config.save()
+
+                    return "setting changed!"
             case "prompts":
                 enabled = []
                 no_prompt = []
