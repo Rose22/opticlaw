@@ -45,6 +45,7 @@ const statusDot = document.getElementById('status');
 const dropOverlay = document.getElementById('drop-overlay');
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
+let allConversations = [];
 
 // =============================================================================
 // Configuration
@@ -788,8 +789,22 @@ async function restoreCurrentConversation() {
 }
 
 function renderConversationList(conversations) {
+    allConversations = conversations; // Store for filtering
+
     const list = document.getElementById('conv-list');
+    const searchInput = document.getElementById('conv-search');
+    const currentSearchQuery = searchInput ? searchInput.value : '';
+
     list.innerHTML = '';
+
+    if (conversations.length === 0) {
+        const emptyMsg = document.createElement('div');
+        emptyMsg.className = 'conv-empty';
+        emptyMsg.textContent = 'No conversations yet';
+        emptyMsg.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.85rem;';
+        list.appendChild(emptyMsg);
+        return;
+    }
 
     conversations.forEach(conv => {
         const item = document.createElement('div');
@@ -833,6 +848,35 @@ function renderConversationList(conversations) {
         item.appendChild(title);
         item.appendChild(meta);
         list.appendChild(item);
+    });
+
+    // Re-apply any active search filter
+    if (currentSearchQuery) {
+        filterConversations(currentSearchQuery);
+    }
+}
+
+function filterConversations(query) {
+    const searchQuery = (query || '').toLowerCase().trim();
+    const items = document.querySelectorAll('.conv-item');
+
+    if (!searchQuery) {
+        // Show all conversations when search is empty
+        items.forEach(item => {
+            item.classList.remove('hidden-by-search');
+        });
+        return;
+    }
+
+    items.forEach(item => {
+        const title = item.querySelector('.conv-item-title');
+        const titleText = title ? title.textContent.toLowerCase() : '';
+
+        if (titleText.includes(searchQuery)) {
+            item.classList.remove('hidden-by-search');
+        } else {
+            item.classList.add('hidden-by-search');
+        }
     });
 }
 

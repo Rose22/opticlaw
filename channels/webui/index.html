@@ -28,6 +28,17 @@
             <div class="sidebar-header">
                 <span class="sidebar-title">Conversations</span>
             </div>
+            <div class="sidebar-header">
+                <span class="sidebar-title">Conversations</span>
+            </div>
+            <div class="sidebar-search">
+                <input type="text" 
+                       class="sidebar-search-input" 
+                       id="conv-search" 
+                       placeholder="Search conversations..." 
+                       oninput="filterConversations(this.value)"
+                       aria-label="Search conversations">
+            </div>
             <div class="sidebar-content">
                 <div class="conv-list" id="conv-list"></div>
             </div>

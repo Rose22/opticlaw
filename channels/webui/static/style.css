@@ -271,6 +271,39 @@ html, body {
 }
 
 /* ==========================================================================
+   Sidebar Search
+   ========================================================================== */
+.sidebar-search {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-sidebar);
+}
+
+.sidebar-search-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.sidebar-search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.sidebar-search-input::placeholder {
+    color: var(--text-muted);
+}
+
+.conv-item.hidden-by-search {
+    display: none;
+}
+
+/* ==========================================================================
    Main Content Area
    ========================================================================== */
 .main-content {
