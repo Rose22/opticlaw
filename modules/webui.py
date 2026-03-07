@@ -5,15 +5,13 @@ class Webui(core.module.Module):
     Allows the AI to manage conversation titles in the WebUI.
     """
 
-    async def rename_conversation(self, new_title: str, conversation_id: str = None):
+    async def rename_conversation(self, new_title: str):
         """
         Rename a conversation in the WebUI sidebar. Use this to give conversations
         meaningful titles based on their content.
 
         Args:
             new_title: The new title for the conversation (max 100 chars)
-            conversation_id: Optional ID of the conversation to rename.
-                If not provided, renames the currently active conversation.
         """
 
         # Get the webui channel
@@ -34,10 +32,10 @@ class Webui(core.module.Module):
         conversations = webui.conversations
 
         # Use provided ID or fall back to current active conversation
-        target_id = conversation_id or webui.current_conversation_id
+        target_id = webui.current_conversation_id
 
         if not target_id:
-            return self.result("Error: No conversation is currently active and no ID was provided", False)
+            return self.result("Error: No conversation is currently active", False)
 
         for i, conv in enumerate(conversations):
             if conv.get('id') == target_id:
