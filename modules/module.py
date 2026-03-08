@@ -36,7 +36,7 @@ class Module(core.module.Module):
         core.config.config.save()
 
         if is_enabled:
-            return "module disabled. remind user to use /restart to apply changes."
+            return "module has been disabled. remind user to use /restart to apply changes."
         else:
-            return "module enabled. remind user to use /restart to apply changes."
+            return "module has been enabled. remind user to use /restart to apply changes."
 
