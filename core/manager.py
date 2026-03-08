@@ -346,7 +346,6 @@ class Manager:
                     "strict": True,
                 },
             }
-            print(json.dumps(tool, indent=2))
 
             self.tools.append(tool)
 
