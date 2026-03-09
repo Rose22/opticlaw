@@ -5,21 +5,29 @@ import shutil
 class SafeEval(core.module.Module):
     """runs python code in a docker container"""
     async def run(self, code: str):
-        program = None
-        if shutil.which("podman"):
-            program = "podman"
-        elif shutil.which("docker"):
-            program = "docker"
+        program = "podman" if shutil.which("podman") else "docker"
 
-        else:
-            return self.result({
-                "stdout": "",
-                "stderr": "error: neither docker nor podman is available"
-            })
+        if not program:
+            return self.result("neither docker nor podman is available", False)
 
         try:
             result = subprocess.run(
-                [program, 'run', '--rm', 'python:3.11', 'python', '-c', code],
+                [
+                    program, 'run', '--rm',
+                    # Resource limits
+                    '--cpus', '0.5',           # Max 50% CPU
+                    '--memory', '128m',        # Max 128MB RAM
+                    '--pids-limit', '50',      # Max 50 processes
+                    '--security-opt', 'no-new-privileges',  # Prevent privilege escalation
+                    # Network isolation
+                    '--network', 'none',       # No network access
+                    # Read-only filesystem
+                    '--read-only',
+                    # Run as non-root user
+                    '--user', '1000:1000',
+                    'python:3.11-slim',        # Use slim image (smaller attack surface)
+                    'python', '-c', code
+                ],
                 capture_output=True,
                 timeout=30
             )
@@ -28,12 +36,4 @@ class SafeEval(core.module.Module):
                 "stderr": result.stderr.decode()
             })
         except subprocess.TimeoutExpired:
-            return self.result({
-                "stdout": "",
-                "stderr": "error: execution timed out after 30 seconds"
-            })
-        except Exception as e:
-            return self.result({
-                "stdout": "",
-                "stderr": f"Error: {str(e)}"
-            })
+            return self.result("process timed out", False)
