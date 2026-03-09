@@ -6,6 +6,7 @@ import aiofiles
 import urllib
 import shutil
 import datetime
+import glob
 
 async def _run_sync(func, *args):
     loop = asyncio.get_running_loop()
@@ -30,17 +31,48 @@ def sizeof_format(num, suffix="B"):
     return f"{num:.1f}Yi{suffix}"
 
 class Files(core.module.Module):
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    MAX_GLOB_DEPTH = 10
+    MAX_SEARCH_RESULTS = 50
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.sandbox_path = os.path.realpath(os.path.expanduser(core.config.get("sandbox_folder")))
         self.trash_path = os.path.realpath(os.path.join(core.get_data_path(), "trash"))
 
-        self.max_file_size = 100 * 1024 * 1024  # 100MB
 
         if not os.path.exists(self.sandbox_path):
             os.makedirs(self.sandbox_path, exist_ok=True)
         if not os.path.exists(self.trash_path):
             os.makedirs(self.trash_path, exist_ok=True)
+
+    def _validate_absolute_path(self, abs_path: str) -> str | None:
+        """
+        Validate that an absolute path is within the sandbox.
+        Returns the relative path if valid, None if invalid.
+        Reuses the same validation logic as _get_sandbox_path.
+        """
+        try:
+            real_path = os.path.realpath(abs_path)
+        except (OSError, ValueError):
+            return None
+
+        if os.path.islink(abs_path):
+            return None
+
+        sandbox_prefix = self.sandbox_path + os.path.sep
+
+        if sys.platform == "win32":
+            check_path = real_path.lower()
+            check_prefix = sandbox_prefix.lower()
+        else:
+            check_path = real_path
+            check_prefix = sandbox_prefix
+
+        if check_path.startswith(check_prefix) or check_path == self.sandbox_path:
+            return self._strip_sandbox_path(real_path)
+
+        return None
 
     def _get_sandbox_path(self, target_path: str):
         path = target_path
@@ -70,31 +102,17 @@ class Files(core.module.Module):
                 if os.path.islink(test_path):
                     raise ValueError("Symlinks are not allowed inside the sandbox")
 
-        # normalize path
-        path = os.path.normpath(path)
-
         if not path:
             return self.sandbox_path
 
-        sandbox_prefix = self.sandbox_path + os.path.sep
-
         # more path traversal protection
-        path_in_sandbox = os.path.join(self.sandbox_path, path)
-        real_path_in_sandbox = os.path.realpath(path_in_sandbox)
+        path_in_sandbox = os.path.join(self.sandbox_path, os.path.normpath(path))
+        validated = self._validate_absolute_path(path_in_sandbox)
 
-        if sys.platform == "win32":
-            check_path = real_path_in_sandbox.lower()
-            check_prefix = sandbox_prefix.lower()
-        else:
-            check_path = real_path_in_sandbox
-            check_prefix = sandbox_prefix
-
-        # Validate path is within sandbox
-        if not (check_path.startswith(check_prefix) or
-                check_path == self.sandbox_path):
+        if validated is None:
             raise ValueError("Access denied: target path is outside sandbox")
 
-        return real_path_in_sandbox
+        return os.path.join(self.sandbox_path, validated)
 
     def _strip_sandbox_path(self, path: str):
         prefix = self.sandbox_path + os.sep
@@ -173,7 +191,7 @@ class Files(core.module.Module):
         if os.path.exists(safe_path):
             return self.result(f"error: file already exists!", False)
 
-        if len(body) > self.max_file_size:
+        if len(body) > self.MAX_FILE_SIZE:
             return self.result("error: file too large", False)
 
         try:
@@ -214,7 +232,7 @@ class Files(core.module.Module):
         """Write to file inside the sandbox. Use relative paths. Always makes a backup for safety."""
         safe_path = self._get_sandbox_path(path)
 
-        if len(body) > self.max_file_size:
+        if len(body) > self.MAX_FILE_SIZE:
             return self.result("error: file too large", False)
 
         await self.manager.channel.announce(f"writing to file {self._strip_sandbox_path(safe_path)}...")
@@ -250,7 +268,7 @@ class Files(core.module.Module):
         if not os.path.exists(safe_path):
             return self.result("file did not exist", False)
 
-        if len(body) > self.max_file_size:
+        if len(body) > self.MAX_FILE_SIZE:
             return self.result("error: file too large", False)
 
         await self.manager.channel.announce(f"appending to file...")
@@ -379,3 +397,42 @@ class Files(core.module.Module):
 
         await _run_sync(_clear)
         return self.result(True)
+
+    async def search_files(self, pattern: str, recursive: bool = False) -> dict:
+        """Search for files matching a glob pattern inside the sandbox."""
+
+        if not pattern or not pattern.strip():
+            return self.result("error: empty pattern", False)
+
+        decoded = pattern
+        for _ in range(3):
+            decoded = urllib.parse.unquote(decoded)
+
+        if ".." in decoded or "\x00" in decoded:
+            return self.result("error: path traversal not allowed", False)
+
+        if os.path.isabs(pattern):
+            return self.result("error: absolute paths not allowed", False)
+
+        if recursive and pattern.count("**") > self.MAX_GLOB_DEPTH:
+            return self.result(f"error: max recursion depth is {self.MAX_GLOB_DEPTH}", False)
+
+        full_pattern = os.path.join(self.sandbox_path, pattern)
+        try:
+            matches = glob.glob(full_pattern, recursive=recursive)
+        except Exception as e:
+            return self.result(f"error during search: {e}", False)
+
+        # filter results
+        safe_matches = []
+        for match in matches:
+            rel_path = self._validate_absolute_path(match)
+            if rel_path:
+                safe_matches.append(rel_path)
+            if len(safe_matches) >= self.MAX_SEARCH_RESULTS:
+                break
+
+        return self.result({
+            "matches": sorted(safe_matches),
+            "truncated": len(matches) > self.MAX_SEARCH_RESULTS
+        })
