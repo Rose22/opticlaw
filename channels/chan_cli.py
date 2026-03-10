@@ -50,7 +50,19 @@ class Cli(core.channel.Channel):
             prompt_session = prompt_toolkit.PromptSession()
             while True:
                 msg = await prompt_session.prompt_async("> ")
-                await self._spawn(msg)
+                message_state = None
+                async for token in self.send_stream("user", msg):
+                    if token.get("type") == "reasoning" and not message_state:
+                        print("Reasoning:")
+                        message_state = "reasoning"
+
+                    if token.get("type") == "content" and message_state == "reasoning":
+                        print()
+                        print("Conclusion:")
+                        message_state = "final output"
+
+                    print(token.get("text"), end="", flush=True)
+                #await self._spawn(msg)
                 print()
 
     async def _announce(self, message: str, type: str = None):

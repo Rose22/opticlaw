@@ -57,95 +57,53 @@ class APIClient():
     def set_messages(self, messages: list):
         self._messages = messages
 
-    def _insert_blank_user_msg(self):
-        if not self._messages:
-            return True
-
-        last_msg = self._messages[-1]
-        last_role = last_msg.get("role")
-
-        # Case 1: Last message was NOT an assistant.
-        if last_role != "assistant":
-            return True
-
-        # Case 2: Last message WAS an assistant. Check for tool_calls.
-        tool_calls = last_msg.get("tool_calls")
-
-        if tool_calls:
-            # CRITICAL: Do NOT insert a user message. 
-            # Sequence MUST be: Assistant(tool_call) -> Tool(result).
-            return True
-
-        # Case 3: Standard assistant text. Insert dummy user to break AA sequence.
-        self._messages.append({"role": "user", "content": "."})
+    def _insert_blank_user_msg(self, next_msg_role: str):
+        if (
+            # if we have anything at all in the messages array
+            self._messages and
+            # and the last message was not a user or tool response message
+            self._messages[-1].get("role") not in ("user", "tool") and
+            # and the last message was also not an assistant message with toolcalls
+            not self._messages[-1].get("tool_calls") and
+            # and the message we're about to post isn't by the user role
+            next_msg_role != "user"
+        ):
+            # ensure message turn order is correct
+            # assistants are allowed to output after a tool role message
+            # but not after their own message..
+            self._messages.append({"role": "user", "content": "[SYSTEM_TICK]"})
         return True
 
-    def _convert_message(self, role: str, content: str, tool_call_id: str = None):
-        # 1. Handle explicit Tool Roles first (Bypass turn-order logic)
-        if role == 'tool_output' or role == 'tool':
-            if not tool_call_id:
-                # Fallback or error handling if ID is missing
-                core.log("warning", "Tool output missing tool_call_id, attempting to find latest call")
-                # In a real fix, you should enforce this ID passing
-                pass 
+    def _convert_message(self, role: str, content: str):
+        # we need to make sure the chain is always system -> user -> assistant -> user -> ... because some models are REALLY particular about it and it's really annoying
 
-            return {
-                "role": "tool",
-                "content": content,
-                "tool_call_id": tool_call_id
-            }
-
-        # 2. Map Internal Roles
-        final_role = role
-        final_content = content
-
+        # Convert special roles to valid API roles with prefixes
         if role.startswith('announce_'):
-            ann_type = role[9:]
-            final_content = f"[System {ann_type.title()}]: {content}"
-            final_role = 'assistant'
+            # announce_info, announce_error, announce_important, announce_schedule
+            ann_type = role[9:]  # 'announce_info' -> 'info'
+            content = f"[System {ann_type.title()}]: {content}"
+            role = 'assistant'
         elif role == 'command':
-            final_role = 'user'
+            # User commands stay as user role
+            role = 'user'
         elif role == 'command_response':
-            final_content = f"[Command Output]: {content}"
-            final_role = 'assistant'
-        elif role == 'system':
-            final_role = 'assistant'
-            final_content = f"[System]: {content}"
+            # Command responses appear as assistant
+            content = f"[Command Output]: {content}"
+            role = 'assistant'
 
-        # 3. Enforce Turn Order ONLY for non-tool messages
-        if final_role == 'assistant':
-            self._insert_blank_user_msg()
+        # insert blank user message if applicable
+        self._insert_blank_user_msg(role)
 
-        return {"role": final_role, "content": final_content}
+        return {"role": role, "content": content}
 
-    async def insert_message(self, role: str, content: str, num_tokens=None, raw_message: dict = None, tool_call_id: str = None):
-        """
-        Inserts a message into context.
-
-        Args:
-            role: Internal role (e.g., 'user', 'announce_info', 'tool_output')
-            content: Content string
-            num_tokens: Optional token count for trimming logic
-            raw_message: If provided, bypasses conversion and inserts this dict directly.
-            tool_call_id: Required if role is 'tool_output' to link back to the call
-        """
+    async def insert_message(self, role: str, content: str, num_tokens=None):
+        """inserts a message (dict with role and content) into context, trimming when needed"""
         if not core.config.get("context_window", False):
+            # allow completely turning off context
             return
 
         await self.trim_messages(num_tokens=num_tokens)
-
-        if raw_message:
-            # Direct insertion for complex objects (like assistant + tool_calls)
-            # We still need to check if this violates turn order if it's an assistant message
-            if raw_message.get("role") == "assistant":
-                self._insert_blank_user_msg()
-
-            self._messages.append(raw_message)
-        else:
-            # Standard conversion path - PASS tool_call_id HERE
-            self._messages.append(self._convert_message(role, content, tool_call_id=tool_call_id))
-
-        return self._messages
+        return self._messages.append(self._convert_message(role, content))
 
     async def trim_messages(self, max_messages: int = None, max_tokens: int = None, num_tokens: int = None):
         """trims context to keep token consumption low"""
@@ -356,6 +314,14 @@ class APIClient():
         # extract message content
         final_content = response_main.message.content or ""
 
+        # Extract reasoning content if available
+        reasoning_content = getattr(response_main.message, "reasoning_content", None) or \
+                            getattr(response_main.message, "reasoning", None) or ""
+
+        # Log reasoning if needed
+        if reasoning_content:
+            core.log("debug:reasoning", reasoning_content)
+
         # handle tool calls, if any
         if core.config.get("tools", False) and response_main.message.tool_calls:
             tool_results = await self.manager.handle_tool_calls(response_main.message.tool_calls, use_context=use_context)
@@ -371,15 +337,30 @@ class APIClient():
                 # fall back to tokenizer counting if api didn't provide a token count
                 token_usage = self.count_tokens_local(context)
 
-            await self.insert_message("assistant", final_content, num_tokens=token_usage)
+            # Build message with optional reasoning
+            assistant_msg = {"role": "assistant", "content": final_content}
+            if reasoning_content:
+                assistant_msg["reasoning_content"] = reasoning_content
 
+            await self.insert_message_obj(assistant_msg, num_tokens=token_usage)
+
+        # Return content (reasoning is stored in context but not returned to caller)
         return final_content
+
+    async def insert_message_obj(self, message_obj: dict, num_tokens=None):
+        """Inserts a pre-built message object into context, trimming when needed"""
+        if not core.config.get("context_window", False):
+            return
+
+        await self.trim_messages(num_tokens=num_tokens)
+        return self._messages.append(message_obj)
 
     async def _recv_stream(self, response, use_tools=True, add_message=True, context=None, use_context=True, **kwargs):
         """takes a response object and extracts the message from it, handling tool calls if needed. streaming version"""
         final_tool_calls = []
         tool_call_buffer = {}
         tokens = []
+        reasoning_tokens = []
 
         token_usage = None
 
@@ -396,13 +377,19 @@ class APIClient():
 
                 if chunk.choices:
                     streamed_token = chunk.choices[0].delta
-                    # if core.config.get("debug"):
-                    #     core.log("debug:stream_chunk", chunk.choices[0].delta)
 
                     # yield the current token in the stream
                     if streamed_token.content:
                         tokens.append(streamed_token.content)
-                        yield streamed_token.content
+                        yield {"type": "content", "text": streamed_token.content}
+
+                    # Handle reasoning content streaming
+                    reason_part = getattr(streamed_token, "reasoning_content", None) or \
+                                  getattr(streamed_token, "reasoning", None)
+
+                    if reason_part:
+                        reasoning_tokens.append(reason_part)
+                        yield {"type": "reasoning", "text": reason_part}
 
                     # extract tool calls, if any
                     if streamed_token.tool_calls and use_tools:
@@ -431,7 +418,7 @@ class APIClient():
                         if toolcall_results:
                             for word in toolcall_results:
                                 tokens.append(word)
-                                yield word
+                                yield {"type": "content", "text": word}
                     except Exception as e:
                         core.log_error(f"error while handling tool calls", e)
                         if self.manager.channel:
@@ -444,12 +431,14 @@ class APIClient():
             # add it to context
             if add_message:
                 final_content = "".join(tokens)
-                await self.insert_message("assistant", final_content, num_tokens=token_usage)
+                final_reasoning = "".join(reasoning_tokens) if reasoning_tokens else ""
+
+                assistant_msg = {"role": "assistant", "content": final_content}
+                if final_reasoning:
+                    assistant_msg["reasoning_content"] = final_reasoning
+
+                await self.insert_message_obj(assistant_msg, num_tokens=token_usage)
         except Exception as e:
             core.log_error("error while receiving response from AI", e)
             if self.manager.channel:
                 await self.manager.channel.announce(f"error while receiving response from AI: {e}", "error")
-
-    async def cancel(self):
-        self.cancel_request = True
-        return True

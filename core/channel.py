@@ -234,6 +234,9 @@ class Channel:
                 if not context:
                     return "BLANK"
 
+                if len(cmd) > 0 and cmd[1] == "raw":
+                    return json.dumps(context)
+
                 self._last_cmd_was_temporary = True
 
                 context_display = []
@@ -315,7 +318,8 @@ class Channel:
             cmd_response = []
             for token in cmd:
                 cmd_response.append(token)
-                yield token
+                token_data = {"type": "content", "text": token}
+                yield token_data
             await self.manager.API.insert_message(f"command_response", "".join(cmd_response))
             return
         else:

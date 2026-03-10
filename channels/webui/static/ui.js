@@ -229,9 +229,45 @@ function renderAllMessages(messages, animate = false) {
     scrollToBottom();
 }
 
+// =============================================================================
+// Reasoning Block Renderer
+// =============================================================================
+
+function renderReasoningBlock(reasoningContent, isCollapsed = true) {
+    if (!reasoningContent) return '';
+
+    const escaped = escapeHtml(reasoningContent);
+    const collapsedClass = isCollapsed ? 'collapsed' : '';
+
+    return `
+        <div class="reasoning-block ${collapsedClass}">
+            <div class="reasoning-header" onclick="toggleReasoningBlock(this)">
+                <svg class="reasoning-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 16v-4"/>
+                    <path d="M12 8h.01"/>
+                </svg>
+                <span>Reasoning</span>
+                <svg class="reasoning-toggle" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </div>
+            <div class="reasoning-content">${escaped}</div>
+        </div>
+    `;
+}
+
+function toggleReasoningBlock(headerElement) {
+    const block = headerElement.closest('.reasoning-block');
+    if (block) {
+        block.classList.toggle('collapsed');
+    }
+}
+
 function createMessageElement(msg, index, animate = false) {
     const role = msg.role || 'user';
     const rawContent = msg.content || '';
+    const reasoningContent = msg.reasoning_content || null;
     const toolCalls = msg.tool_calls || null;
     const toolCallId = msg.tool_call_id || null;
     const timestamp = msg.timestamp || formatTime();
@@ -250,14 +286,16 @@ function createMessageElement(msg, index, animate = false) {
 
     let wrapperClass, msgClass;
 
-    if (parsed.isAnnouncement) {
+    if (rawContent === '[SYSTEM_TICK]') {
+        wrapperClass = 'system-tick';
+        msgClass = 'system-tick';
+    } else if (parsed.isAnnouncement) {
         wrapperClass = 'announce';
         msgClass = `announce ${parsed.type}`;
     } else if (parsed.isCommandOutput) {
         wrapperClass = 'command_response';
         msgClass = 'command_response';
     } else if (role === 'tool') {
-        // Standalone tool response (no matching call found)
         wrapperClass = 'tool';
         msgClass = 'tool';
     } else if (toolCalls && toolCalls.length > 0) {
@@ -292,23 +330,35 @@ function createMessageElement(msg, index, animate = false) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${msgClass}`;
 
+    // Build message content
+    let messageHtml = '';
+
+    // Add reasoning block BEFORE the main content (only for assistant messages)
+    if (role === 'assistant' && reasoningContent) {
+        messageHtml += renderReasoningBlock(reasoningContent);
+    }
+
     // Render based on message type
     if (parsed.isAnnouncement) {
-        msgDiv.innerHTML = escapeHtml(displayContent);
+        messageHtml += escapeHtml(displayContent);
     } else if (role === 'tool' && !toolCallId) {
-        // Standalone tool response (no matching call)
-        msgDiv.innerHTML = renderStandaloneToolResponse(rawContent);
+        messageHtml += renderStandaloneToolResponse(rawContent);
     } else if (toolCalls && toolCalls.length > 0) {
-        msgDiv.innerHTML = renderToolCalls(toolCalls);
+        messageHtml += renderToolCalls(toolCalls);
     } else if (role === 'schedule') {
-        msgDiv.innerHTML = renderScheduleMessage(rawContent);
+        messageHtml += renderScheduleMessage(rawContent);
     } else if (parsed.isCommandOutput || wrapperClass === 'user_command') {
-        msgDiv.innerHTML = `<pre>${escapeHtml(displayContent)}</pre>`;
+        messageHtml += `<pre>${escapeHtml(displayContent)}</pre>`;
     } else if (role === 'user') {
-        msgDiv.innerHTML = renderMarkdown(displayContent);
-        highlightCode(msgDiv);
+        messageHtml += renderMarkdown(displayContent);
     } else {
-        msgDiv.innerHTML = renderMarkdown(displayContent);
+        messageHtml += renderMarkdown(displayContent);
+    }
+
+    msgDiv.innerHTML = messageHtml;
+
+    // Highlight code if not announcement/command
+    if (!parsed.isAnnouncement && !parsed.isCommandOutput && !wrapperClass.includes('command')) {
         highlightCode(msgDiv);
     }
 
@@ -1752,25 +1802,23 @@ async function send() {
 
     clearInput();
 
+    // Create user message element
     const userWrapper = document.createElement('div');
-
-    if (message.trim().startsWith('/')) {
-        userWrapper.className = 'message-wrapper user_command';
-    } else {
-        userWrapper.className = 'message-wrapper user';
-    }
-
+    userWrapper.className = message.trim().startsWith('/')
+        ? 'message-wrapper user_command'
+        : 'message-wrapper user';
     userWrapper.classList.add('animate-in');
-
     userWrapper.setAttribute('role', 'article');
     userWrapper.dataset.index = 'pending';
 
     const userMsgDiv = document.createElement('div');
+    userMsgDiv.className = message.trim().startsWith('/')
+        ? 'message user_command'
+        : 'message user';
+
     if (message.trim().startsWith('/')) {
-        userMsgDiv.className = 'message user_command';
         userMsgDiv.innerHTML = `<pre>${escapeHtml(message)}</pre>`;
     } else {
-        userMsgDiv.className = 'message user';
         userMsgDiv.innerHTML = renderMarkdown(message);
         highlightCode(userMsgDiv);
     }
@@ -1779,6 +1827,7 @@ async function send() {
     userTs.className = 'timestamp timestamp-right';
     userTs.textContent = formatTime();
     userMsgDiv.appendChild(userTs);
+
     const userActions = createActionButtons('user', 'pending', message, true);
     userWrapper.appendChild(userMsgDiv);
     userWrapper.appendChild(userActions);
@@ -1789,6 +1838,7 @@ async function send() {
     isStreaming = true;
     currentController = new AbortController();
 
+    // Create AI message wrapper (hidden until first token)
     const aiWrapper = document.createElement('div');
     aiWrapper.className = 'message-wrapper ai hidden';
     aiWrapper.dataset.index = 'streaming';
@@ -1797,11 +1847,14 @@ async function send() {
     const aiMsgDiv = document.createElement('div');
     aiMsgDiv.className = 'message ai';
     aiWrapper.appendChild(aiMsgDiv);
+
     const aiActions = createActionButtons('assistant', 'streaming', '', true);
     aiWrapper.appendChild(aiActions);
 
     let aiContent = '';
+    let aiReasoning = '';
     let streamStarted = false;
+    let hasReasoning = false;
 
     try {
         const response = await fetch('/stream', {
@@ -1839,20 +1892,44 @@ async function send() {
                             return;
                         }
 
-                        if (data.token) {
+                        // Handle reasoning tokens
+                        if (data.type === 'reasoning') {
+                            if (!streamStarted) {
+                                streamStarted = true;
+                                typing.classList.remove('show');
+                                aiWrapper.classList.remove('hidden');
+                            }
+                            hasReasoning = true;
+                            aiReasoning += data.text || '';
+                            updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
+                            scrollToBottomDelayed();
+                        }
+
+                        // Handle content tokens
+                        if (data.type === 'content') {
+                            const token = data.text || data.token || '';
+                            if (token) {
+                                if (!streamStarted) {
+                                    streamStarted = true;
+                                    typing.classList.remove('show');
+                                    aiWrapper.classList.remove('hidden');
+                                }
+                                aiContent += token;
+                                updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
+                                scrollToBottomDelayed();
+                            }
+                        }
+
+                        // Legacy token format (backward compatibility)
+                        if (data.token && !data.type) {
                             if (!streamStarted) {
                                 streamStarted = true;
                                 typing.classList.remove('show');
                                 aiWrapper.classList.remove('hidden');
                             }
                             aiContent += data.token;
-                            aiMsgDiv.innerHTML = renderMarkdown(aiContent);
-                            highlightCode(aiMsgDiv);
+                            updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
                             scrollToBottomDelayed();
-                        }
-
-                        if (data.done) {
-                            // handle in finally()
                         }
 
                         if (data.error) {
@@ -1881,6 +1958,23 @@ async function send() {
         await syncMessages();
         await saveCurrentConversation();
     }
+}
+
+function updateStreamingContent(msgDiv, content, reasoning) {
+    let html = '';
+
+    // Add reasoning block if present (collapsed during streaming)
+    if (reasoning) {
+        html += renderReasoningBlock(reasoning, false); // Not collapsed during streaming
+    }
+
+    // Add main content
+    if (content) {
+        html += renderMarkdown(content);
+    }
+
+    msgDiv.innerHTML = html;
+    highlightCode(msgDiv);
 }
 
 function finishStream() {

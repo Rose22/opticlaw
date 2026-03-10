@@ -221,28 +221,42 @@ def index():
 
 @app.route('/messages')
 def get_messages():
-    """
-    Get all messages from the backend.
-
-    This is the primary endpoint for the frontend to sync with the backend.
-    Returns messages with their indices for proper tracking.
-    """
+    """Get all messages from the backend API."""
     if not channel_instance:
         return jsonify({'messages': [], 'count': 0})
 
-    messages = channel_instance.get_messages()
+    # Access the API client through the manager
+    messages = channel_instance.manager.API.get_messages()
+    result = []
+
+    for i, msg in enumerate(messages):
+        role = msg.get('role', 'user')
+        content = msg.get('content', '')
+        tool_calls = msg.get('tool_calls')
+        tool_call_id = msg.get('tool_call_id')
+        reasoning_content = msg.get('reasoning_content')
+
+        if content or tool_calls or role == 'tool':
+            msg_data = {
+                'role': role,
+                'content': content,
+                'tool_calls': tool_calls,
+                'tool_call_id': tool_call_id,
+                'index': i
+            }
+            # Only include reasoning if it exists
+            if reasoning_content:
+                msg_data['reasoning_content'] = reasoning_content
+            result.append(msg_data)
+
     return jsonify({
-        'messages': messages,
-        'count': len(messages)
+        'messages': result,
+        'count': len(result)
     })
 
 @app.route('/messages/since')
 def get_messages_since():
-    """
-    Get messages since a specific index.
-
-    More efficient than getting all messages when just polling for updates.
-    """
+    """Get messages since a specific index."""
     if not channel_instance:
         return jsonify({'messages': [], 'count': 0})
 
@@ -251,20 +265,39 @@ def get_messages_since():
     except ValueError:
         since_index = 0
 
-    messages = channel_instance.get_messages_since(since_index)
+    messages = channel_instance.manager.API.get_messages()
+    result = []
+
+    for i in range(since_index, len(messages)):
+        msg = messages[i]
+        role = msg.get('role', 'user')
+        content = msg.get('content', '')
+        tool_calls = msg.get('tool_calls')
+        tool_call_id = msg.get('tool_call_id')
+        reasoning_content = msg.get('reasoning_content')
+
+        if content or tool_calls or role == 'tool':
+            msg_data = {
+                'role': role,
+                'content': content,
+                'tool_calls': tool_calls,
+                'tool_call_id': tool_call_id,
+                'index': i
+            }
+            if reasoning_content:
+                msg_data['reasoning_content'] = reasoning_content
+            result.append(msg_data)
+
     return jsonify({
-        'messages': messages,
-        'count': len(messages),
-        'total': len(channel_instance.manager.API.get_messages())
+        'messages': result,
+        'count': len(result),
+        'total': len(messages)
     })
 
 @app.route('/stream', methods=['POST'])
 def stream_message():
     """
     Stream AI response token by token using Server-Sent Events.
-
-    Inserts the user message first, then streams the AI response.
-    Both messages are stored in the backend.
     """
     global channel_instance
 
@@ -278,15 +311,15 @@ def stream_message():
 
         async def collect_tokens():
             try:
-                # Send via the channel (handles commands vs regular messages)
-                response_text = []
-                async for token in channel_instance.send_stream("user", user_message):
+                # Use the channel's send_stream which calls API.send_stream
+                async for token_data in channel_instance.send_stream("user", user_message):
                     if stream_id in stream_cancellations:
                         stream_cancellations.discard(stream_id)
                         token_queue.put(('cancelled', True))
                         break
-                    token_queue.put(token)
-                    response_text.append(token)
+
+                    # Pass the dict through: {'type': 'content'|'reasoning', 'text': '...'}
+                    token_queue.put(token_data)
             except Exception as e:
                 token_queue.put(('error', str(e)))
             finally:
@@ -297,24 +330,30 @@ def stream_message():
         # Send stream ID first
         yield f"data: {json.dumps({'id': stream_id})}\n\n"
 
-        # Stream tokens
         while True:
             item = token_queue.get()
 
             if item is done:
-                # Get final message count
                 total = len(channel_instance.manager.API.get_messages())
                 yield f"data: {json.dumps({'done': True, 'total': total})}\n\n"
                 break
+
             elif isinstance(item, tuple):
+                # Handle special signals (error, cancelled)
                 if item[0] == 'error':
                     yield f"data: {json.dumps({'error': item[1]})}\n\n"
                     break
                 elif item[0] == 'cancelled':
                     yield f"data: {json.dumps({'cancelled': True})}\n\n"
                     break
+
+            elif isinstance(item, dict):
+                # New token format: {'type': 'content', 'text': '...'} or {'type': 'reasoning', 'text': '...'}
+                yield f"data: {json.dumps(item)}\n\n"
+
             else:
-                yield f"data: {json.dumps({'token': item})}\n\n"
+                # Fallback for legacy string tokens
+                yield f"data: {json.dumps({'type': 'content', 'text': str(item)})}\n\n"
 
         future.result()
 

@@ -169,8 +169,6 @@ class Files(core.module.Module):
             # dont back up when theres nothing to overwrite
             return False
 
-        await self.manager.channel.announce(f"backing up {path}..")
-
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         await _run_sync(shutil.copy, safe_path, f"{safe_path}.{timestamp}.old")
 
@@ -235,8 +233,6 @@ class Files(core.module.Module):
         if len(body) > self.MAX_FILE_SIZE:
             return self.result("error: file too large", False)
 
-        await self.manager.channel.announce(f"writing to file {self._strip_sandbox_path(safe_path)}...")
-
         try:
             await self._backup_file(safe_path)
         except Exception as e:
@@ -271,8 +267,6 @@ class Files(core.module.Module):
         if len(body) > self.MAX_FILE_SIZE:
             return self.result("error: file too large", False)
 
-        await self.manager.channel.announce(f"appending to file...")
-
         try:
             await self._backup_file(safe_path)
         except Exception as e:
@@ -295,8 +289,6 @@ class Files(core.module.Module):
         """Moves a file from src_path to target_path. Can also be used to rename files. Use relative paths."""
         src = self._get_sandbox_path(src_path)
         tgt = self._get_sandbox_path(target_path)
-
-        await self.manager.channel.announce(f"mv {self._strip_sandbox_path(src)} -> {self._strip_sandbox_path(tgt)}")
 
         try:
             await self._backup_file(tgt)
@@ -357,8 +349,6 @@ class Files(core.module.Module):
     async def delete(self, path: str) -> dict:
         """Moves a file to trash. Never outright deletes, for safety's sake"""
         safe_path = self._get_sandbox_path(path)
-
-        await self.manager.channel.announce(f"trashing file {self._strip_sandbox_path(safe_path)}")
 
         try:
             base_name = os.path.basename(safe_path)

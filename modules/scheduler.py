@@ -26,13 +26,8 @@ class Scheduler(core.module.Module):
                             message = await self.manager.API._recv(
                                 await self.manager.API._request([
                                     {
-                                        "role": "system",
-                                        "content": f"# An event has triggered!\nPlease follow these instructions:\n{action}\nUse tools if needed. For simple reminders, do not use tools."
-                                    },
-                                    {
-                                        # why, openAI?!
                                         "role": "user",
-                                        "content": ""
+                                        "content": f"# An event has triggered!\nPlease follow these instructions:\n{action}\nUse tools if needed. For simple reminders, do not use tools."
                                     }
                                 ]),
                                 use_context=False,

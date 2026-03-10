@@ -800,6 +800,64 @@ header h1 {
     border-bottom-left-radius: var(--radius-sm);
 }
 
+/* Reasoning block styles */
+.reasoning-block {
+    margin-bottom: 12px;
+    border-left: 3px solid var(--accent);
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.reasoning-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.reasoning-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.reasoning-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.reasoning-toggle {
+    width: 12px;
+    height: 12px;
+    transition: transform 0.2s ease;
+}
+
+.reasoning-block.collapsed .reasoning-toggle {
+    transform: rotate(-90deg);
+}
+
+.reasoning-content {
+    padding: 12px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.reasoning-block.collapsed .reasoning-content {
+    display: none;
+}
+
+.streaming .reasoning-content {
+    max-height: none;
+}
+
 /* Announcement messages - styled based on type */
 .message.announce {
     background: var(--bg-message-announce);
@@ -886,6 +944,11 @@ header h1 {
 }
 
 /* Tool Call Messages */
+.system-tick {
+    /* hide these from view */
+    display: none;
+}
+
 .message.tool_call {
     background: transparent;
     border: none;

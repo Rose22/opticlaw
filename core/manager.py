@@ -142,6 +142,9 @@ class Manager:
             return ""
 
     async def get_end_prompt(self):
+        # temporarily disabled
+        return None
+
         #W automatically insert system prompts returned by modules (such as memory)
         histend_prompt = []
         for module_name, module in self.modules.items():
@@ -329,7 +332,7 @@ class Manager:
                 if param.default == inspect.Parameter.empty:
                     required_args.append(param_name)
 
-                func_params_translated[param_name] = {"type": param_type, "description": param_descriptions.get(param_name)}
+                func_params_translated[param_name] = {"type": param_type, "description": param_descriptions.get(param_name, "")}
 
             # build toolcall object
             tool = {
@@ -352,49 +355,52 @@ class Manager:
         return loaded_module
 
     async def handle_tool_calls(self, tool_calls, use_context=True):
-        # 1. Repair JSON and normalize tool calls
+        # Fix broken JSON and convert to dicts
         repaired_tool_calls = []
-        for tool_call in tool_calls:
-            tool_call_dict = tool_call.to_dict()
-            raw_args = tool_call_dict['function']['arguments']
 
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                tool_call = tool_call.model_dump(warnings=False)
+            raw_args = tool_call['function']['arguments']
+
+            # handle both string and dict arguments
             if isinstance(raw_args, dict):
+                # sometimes a model returns a dict, so use it as-is
                 modified_args = raw_args
             elif isinstance(raw_args, str):
+                # attempt to repair json
                 try:
                     modified_args = json_repair.loads(raw_args)
                 except Exception as e:
                     core.log("error", f"JSON repair failed: {e}")
                     modified_args = {}
             else:
+                core.log("error", f"unexpected arguments type: {type(raw_args)}")
                 modified_args = {}
 
+            # validate arguments
             if not isinstance(modified_args, dict):
+                core.log("error", f"Arguments not a dict: {modified_args}")
                 modified_args = {}
 
-            tool_call_dict['function']['arguments'] = json.dumps(modified_args)
-            repaired_tool_calls.append(tool_call_dict)
+            # ensure args is a string
+            tool_call['function']['arguments'] = json.dumps(modified_args)
 
-        # 2. Append the Assistant Message (with tool_calls) to history
-        # This uses our safe insertion logic to prevent Assistant->Assistant errors
-        await self.API.insert_message(
-            role="assistant",
-            content="",
-            raw_message={
-                "role": "assistant",
-                "tool_calls": repaired_tool_calls
-            }
-        )
+            repaired_tool_calls.append(tool_call)
 
-        # 3. Execute tools and append results IMMEDIATELY
+        # Add fixed tool calls to the context
+        self.API._messages.append({
+            "role": "assistant",
+            "tool_calls": repaired_tool_calls
+        })
+
+        # Execute each tool and add their responses
+        tool_responses = []
         for tool_call_dict in repaired_tool_calls:
             tool_name = tool_call_dict['function']['name']
             tool_args = json_repair.loads(tool_call_dict['function']['arguments'])
 
-            # CRITICAL FIX: Extract the ID here for this specific tool call
-            tool_call_id = tool_call_dict['id'] 
-
-            # Find the module
+            # Find the module that contains the target tool
             module_instance = None
             module_instance_display_name = None
 
@@ -403,6 +409,7 @@ class Manager:
                 translated_tool_name = tool_name.replace(f"{class_display_name}_", "")
 
                 if hasattr(module_obj, translated_tool_name):
+                    # module found!
                     module_instance = module_obj
                     module_instance_display_name = class_display_name
                     break
@@ -411,70 +418,49 @@ class Manager:
                 translated_tool_name = tool_name.replace(f"{module_instance_display_name}_", "")
                 func_callable = getattr(module_instance, translated_tool_name)
 
-                # Logging
+                # Create a nice string the user will see
                 arg_display = []
                 for key, value in tool_args.items():
-                    val_str = str(value)
-                    if len(val_str) > 50: val_str = f"{val_str[:50]}.."
-                    arg_display.append(f"{key}={val_str}")
-                core.log("toolcall", f"calling tool {tool_name}({', '.join(arg_display)})")
+                    value = str(value)
+                    if len(value) > 50:
+                        value = f"{value[:50]}.."
+                    arg_display.append(f"{key}={value}")
+                arg_display_str = ", ".join(arg_display)
+                announce_string = f"calling tool {tool_name}({arg_display_str})"
 
+                core.log("toolcall", announce_string)
+
+                # Execute the class method
                 try:
                     func_response = await func_callable(**tool_args)
-
-                    # FIX: Smart serialization to prevent double-quoting or broken JSON
-                    if isinstance(func_response, str):
-                        # It's already a string, use it directly. Do NOT json.dumps() it again.
-                        clean_content = func_response
-                    elif isinstance(func_response, (list, dict)):
-                        # It's structured data, dump it once to a JSON string
-                        clean_content = json.dumps(func_response)
-                    else:
-                        # Fallback for integers, booleans, etc.
-                        clean_content = str(func_response)
-
-                    # Safety: Remove any null bytes or problematic control chars that break parsers
-                    clean_content = clean_content.replace('\x00', '')
-
-                    await self.API.insert_message(
-                        role="tool_output",
-                        content=clean_content,
-                        tool_call_id=tool_call_id
-                    )
+                    tool_response = {
+                        "role": "tool",
+                        "tool_call_id": tool_call_dict['id'],
+                        "content": json.dumps(str(func_response))
+                    }
                 except Exception as e:
-                    core.log("error", f"Tool execution error: {e}")
-                    # Even on error, we must return a tool message to close the turn
-                    await self.API.insert_message(
-                        role="tool_output",
-                        content=f"error: {str(e)}",
-                        tool_call_id=tool_call_id
-                    )
-            else:
-                core.log("error", f"Module not found for tool: {tool_name}")
-                # If tool not found, still need to close the turn to avoid API error
-                await self.API.insert_message(
-                    role="tool_output",
-                    content=f"error: Tool '{tool_name}' not found.",
-                    tool_call_id=tool_call_id
-                )
+                    core.log("toolcall", f"error: {str(e)}")
+                    tool_response = {
+                        "role": "tool",
+                        "tool_call_id": tool_call_dict['id'],
+                        "content": f"error: {str(e)}"
+                    }
 
-        # 5. Check for cancellation
+                self.API._messages.append(tool_response)
+            else:
+                core.log("toolcall", f"tried to call tool {tool_name} but couldn't find it")
+
         if self.API.cancel_request:
             if self.channel:
                 await self.channel.announce("toolcalling chain cancelled", "info")
             return None
 
-        # 6. Build the prompt for the NEXT turn
-        # Now the history ends with: ... -> Assistant(tool_call) -> Tool(result)
-        # This is a VALID state for the API to accept a new user/assistant turn.
         prompt = [
-            {"role": "system", "content": "If the tool response provides sufficient answers, tell the user the results. If not, consider if you need to use another tool? If so, call it."}
+            {"role": "system", "content": "If the tool response provides sufficient answers, explain the results to the user. If not, call another tool."}
         ] + self.API._messages
-
         await self.API.trim_messages(num_tokens=self.API.count_tokens_local(prompt))
 
         try:
-            # Send the request. The API will now see a complete tool turn and generate normal text.
             return await self.API._recv(
                 await self.API._request(prompt, tools=self.tools),
                 use_tools=True,
