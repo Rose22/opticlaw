@@ -2,6 +2,8 @@ import os
 
 import core.storage
 import core.module
+import core.commands
+import core.context
 import core.channel
 from core.functions import *
 

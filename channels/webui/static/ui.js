@@ -514,9 +514,9 @@ function renderToolCalls(toolCalls) {
                     ? JSON.stringify(argValue)
                     : String(argValue);
 
-                if (displayValue.length > 50) {
-                    displayValue = displayValue.substring(0, 50) + '...';
-                }
+                // if (displayValue.length > 50) {
+                //     displayValue = displayValue.substring(0, 50) + '...';
+                // }
 
                 html += `
                     <div class="tool-call-arg-row">
@@ -587,9 +587,9 @@ function renderToolResponseContent(content) {
     }
 
     // Truncate long plain text
-    if (displayContent.length > 500) {
-        displayContent = displayContent.substring(0, 500) + '...';
-    }
+    // if (displayContent.length > 500) {
+    //     displayContent = displayContent.substring(0, 500) + '...';
+    // }
 
     return `<div class="tool-response-string">${escapeHtml(displayContent)}</div>`;
 }
@@ -601,9 +601,9 @@ function renderJsonResponseCompact(data) {
             return renderJsonResponseCompact(inner);
         } catch (e) {
             let str = data;
-            if (str.length > 500) {
-                str = str.substring(0, 500) + '...';
-            }
+            // if (str.length > 500) {
+            //     str = str.substring(0, 500) + '...';
+            // }
             return `<div class="tool-response-string">${escapeHtml(str)}</div>`;
         }
     }
@@ -624,7 +624,7 @@ function renderJsonResponseCompact(data) {
                 html += renderJsonResponseCompact(item);
             } else {
                 let strVal = String(item);
-                if (strVal.length > 80) strVal = strVal.substring(0, 80) + '...';
+                // if (strVal.length > 80) strVal = strVal.substring(0, 80) + '...';
                 html += `<span class="tool-response-scalar">${escapeHtml(strVal)}</span>`;
             }
             html += `</div>`;
@@ -653,7 +653,7 @@ function renderJsonResponseCompact(data) {
                 html += renderJsonResponseCompact(value);
             } else {
                 let strVal = String(value);
-                if (strVal.length > 100) strVal = strVal.substring(0, 100) + '...';
+                // if (strVal.length > 100) strVal = strVal.substring(0, 100) + '...';
                 html += `<span class="tool-response-scalar">${escapeHtml(strVal)}</span>`;
             }
 
@@ -665,7 +665,7 @@ function renderJsonResponseCompact(data) {
 
     // Primitive
     let strVal = String(data);
-    if (strVal.length > 100) strVal = strVal.substring(0, 100) + '...';
+    // if (strVal.length > 100) strVal = strVal.substring(0, 100) + '...';
     return `<span class="tool-response-scalar">${escapeHtml(strVal)}</span>`;
 }
 

@@ -28,7 +28,7 @@ class APIClient():
 
     def count_tokens_local(self, messages: list) -> int:
         """
-        Counts tokens locally using tiktoken. 
+        Counts tokens locally using tiktoken.
         Used as a fallback if the API doesn't return usage data.
         """
         import tiktoken
@@ -56,6 +56,9 @@ class APIClient():
         return self._messages
     def set_messages(self, messages: list):
         self._messages = messages
+
+    async def cancel(self):
+        self.cancel_request = True
 
     def _insert_blank_user_msg(self, next_msg_role: str):
         if (
@@ -205,7 +208,7 @@ class APIClient():
         histend_size_words = len(str(histend).split())
 
         combined_size_words = message_hist_size_words+sysprompt_size_words+histend_size_words
-        
+
         token_usage = self.count_tokens_local(await self.build_context(system_prompt=True))
 
         return {
@@ -311,9 +314,6 @@ class APIClient():
                 await self.manager.channel.announce(f"error while receiving response from AI: {e}", "error")
             return None
 
-        # extract message content
-        final_content = response_main.message.content or ""
-
         # Extract reasoning content if available
         reasoning_content = getattr(response_main.message, "reasoning_content", None) or \
                             getattr(response_main.message, "reasoning", None) or ""
@@ -321,6 +321,10 @@ class APIClient():
         # Log reasoning if needed
         if reasoning_content:
             core.log("debug:reasoning", reasoning_content)
+
+        # extract message content
+        # replace with reasoning if message was blank
+        final_content = response_main.message.content or reasoning_content or ""
 
         # handle tool calls, if any
         if core.config.get("tools", False) and response_main.message.tool_calls:

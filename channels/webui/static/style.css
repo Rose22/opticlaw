@@ -846,8 +846,6 @@ header h1 {
     color: var(--text-secondary);
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 300px;
-    overflow-y: auto;
 }
 
 .reasoning-block.collapsed .reasoning-content {
@@ -1142,6 +1140,7 @@ header h1 {
 .tool-call-arg-value {
     color: var(--text-primary);
     word-break: break-all;
+    white-space: pre-wrap;
 }
 
 .tool-call-no-args {
@@ -1778,4 +1777,96 @@ header h1 {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+}
+
+/* JSON Tree Styles */
+.json-tree {
+  font-family: monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  padding-left: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.json-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1.2em;
+  border-left: 1px solid var(--border-color);
+}
+
+.json-tree li {
+  position: relative;
+  padding-left: 0.5em;
+}
+
+/* The connecting line dot */
+.json-tree li::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0.75em;
+  width: 6px;
+  height: 1px;
+  background-color: var(--border-color);
+}
+
+.json-key {
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+.json-string {
+  color: var(--text-secondary);
+}
+
+.json-number {
+  color: var(--accent-secondary);
+}
+
+.json-boolean {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.json-null {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Toggle Button */
+.tree-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.1);
+  color: var(--text-primary);
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.tree-toggle:hover {
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.tree-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+.tree-children.collapsed {
+  display: none;
+}
+
+.tree-summary {
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: 4px;
 }

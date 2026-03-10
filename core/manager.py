@@ -23,6 +23,9 @@ class Manager:
         self.modules = {}
         self.tools = []
 
+        # UI-agnostic conversations system - save/load context windows from save file!
+        self.conversations = core.storage.StorageList("conversations", "msgpack")
+
     def connect(self, *args, **kwargs):
         args = (self,)+args
         try:
@@ -291,6 +294,10 @@ class Manager:
                 continue
 
             if not callable(func_obj):
+                continue
+
+            if getattr(func_obj, "_is_command", False):
+                # decorated command in a module
                 continue
 
             # if there's a docstring, make sure to pass that on to the LLM

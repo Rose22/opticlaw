@@ -10,6 +10,15 @@ class Module:
         self.manager = manager
         self.channel = channel
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Scan the class for methods decorated with @command
+        for attr_name in dir(cls):
+            method = getattr(cls, attr_name)
+            # Check if it's a function and has our custom attribute
+            if callable(method) and hasattr(method, "_is_command"):
+                cmd_name = method._command_name
+                core.commands.register_command_handler(cmd_name, cls, method)
 
     def result(self, data, success=True):
         """unified way of returning tool results"""
