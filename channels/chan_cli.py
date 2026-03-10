@@ -12,7 +12,7 @@ class Cli(core.channel.Channel):
             while True:
                 msg = await prompt_session.prompt_async("> ")
                 message_state = None
-                async for token in self.send_stream("user", msg):
+                async for token in self.send_stream({"role": "user", "content": msg}):
                     if token.get("type") == "reasoning" and not message_state:
                         print("Reasoning:")
                         message_state = "reasoning"
@@ -22,7 +22,7 @@ class Cli(core.channel.Channel):
                         print("Conclusion:")
                         message_state = "final output"
 
-                    print(token.get("text"), end="", flush=True)
+                    print(token.get("content"), end="", flush=True)
                 print()
 
     async def _announce(self, message: str, type: str = None):

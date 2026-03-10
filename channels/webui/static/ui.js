@@ -21,6 +21,7 @@ let currentConversationId = null;
 
 // Stream state
 let isStreaming = false;
+let streamFrozen = false;
 let currentController = null;
 let currentStreamId = null;
 let editingIndex = null;
@@ -222,8 +223,10 @@ function renderAllMessages(messages, animate = false) {
     const wrappers = chat.querySelectorAll('.message-wrapper');
     wrappers.forEach(wrapper => wrapper.remove());
 
-    messages.forEach((msg) => {
-        createMessageElement(msg, msg.index, animate);
+    messages.forEach((msg, i) => {
+        // Use the index from the message, or fall back to array position
+        const index = msg.index !== undefined ? msg.index : i;
+        createMessageElement(msg, index, animate);
     });
 
     scrollToBottom();
@@ -344,6 +347,10 @@ function createMessageElement(msg, index, animate = false) {
     } else if (role === 'tool' && !toolCallId) {
         messageHtml += renderStandaloneToolResponse(rawContent);
     } else if (toolCalls && toolCalls.length > 0) {
+        // Render tool decision text with proper styling
+        if (displayContent && displayContent.trim()) {
+            messageHtml += `<div class="tool-decision-text">${renderMarkdown(displayContent)}</div>`;
+        }
         messageHtml += renderToolCalls(toolCalls);
     } else if (role === 'schedule') {
         messageHtml += renderScheduleMessage(rawContent);
@@ -991,30 +998,30 @@ async function pollMessages() {
         }
 
         const data = await response.json();
+        const messages = data.messages || [];
 
-        if (data.messages && data.messages.length > 0) {
-            for (const msg of data.messages) {
+        if (messages.length > 0) {
+            for (const msg of messages) {
+                const msgIndex = msg.index;
                 const parsed = parseMessageContent(msg.content || '');
                 const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
                 const isToolResponse = msg.role === 'tool';
-
-                // ✅ FIX: Always identify tool messages clearly
                 const isToolMessage = hasToolCalls || isToolResponse;
                 const isUserCommand = msg.role === 'user' && (msg.content || '').trim().startsWith('/');
                 const isCommandOutput = parsed.isCommandOutput;
 
-                // ✅ FIX: Relax the streaming filter.
-                // ONLY skip regular assistant text tokens during streaming if you want to avoid flicker.
-                // BUT NEVER skip tool calls or tool responses.
+                // Freeze streaming content when first tool call appears
+                if (isStreaming && hasToolCalls && !streamFrozen) {
+                    streamFrozen = true;
+                    // Don't update aiContent anymore - it's frozen
+                }
+
                 if (isStreaming && !parsed.isAnnouncement) {
                     if (!isUserCommand && !isCommandOutput && !isToolMessage) {
-                        // Skip regular chat text during stream to avoid double-rendering
-                        // (since the stream handler renders tokens live)
                         continue;
                     }
                 }
 
-                // Show browser notification for announcements (always)
                 if (parsed.isAnnouncement) {
                     showAnnouncementNotification(
                         parsed.displayContent,
@@ -1022,10 +1029,9 @@ async function pollMessages() {
                     );
                 }
 
-                // Check if message already exists
-                const existing = chat.querySelector(`[data-index="${msg.index}"]`);
+                const existing = chat.querySelector(`[data-index="${msgIndex}"]`);
                 if (!existing) {
-                    createMessageElement(msg, msg.index, true);
+                    createMessageElement(msg, msgIndex, true);
                 }
             }
             lastMessageIndex = data.total;
@@ -1041,9 +1047,18 @@ async function syncMessages() {
         const response = await fetch('/messages');
         const data = await response.json();
 
-        if (data.messages) {
-            renderAllMessages(data.messages);
-            lastMessageIndex = data.count;
+        const messages = data.messages || [];
+
+        if (messages.length > 0) {
+            // Messages should now have indices from backend
+            // Re-render everything to ensure indices are in sync
+            renderAllMessages(messages);
+            // Update lastMessageIndex to the last message's index
+            lastMessageIndex = messages[messages.length - 1].index;
+        } else {
+            const wrappers = chat.querySelectorAll('.message-wrapper');
+            wrappers.forEach(wrapper => wrapper.remove());
+            lastMessageIndex = 0;
         }
     } catch (err) {
         console.error('Failed to sync messages:', err);
@@ -1069,17 +1084,45 @@ async function restoreCurrentConversation() {
         const response = await fetch('/conversation/current');
         const data = await response.json();
 
-        if (data.success && data.current_id && data.conversation) {
-            currentConversationId = data.current_id;
+        if (data.success && data.conversation && data.conversation.id) {
+            currentConversationId = data.conversation.id;
             const messages = data.conversation.messages || [];
+
+            updateConversationTitleBar(data.conversation.title);
 
             if (messages.length > 0) {
                 renderAllMessages(messages);
-                lastMessageIndex = messages.length;
+                // Use total from response, or calculate from last message index
+                lastMessageIndex = data.conversation.total ||
+                (messages[messages.length - 1].index + 1);
+            } else {
+                lastMessageIndex = 0;
             }
+        } else if (data.success && data.current_id === null) {
+            currentConversationId = null;
+            lastMessageIndex = 0;
+            updateConversationTitleBar(null);
         }
     } catch (e) {
         console.error('Failed to restore current conversation:', e);
+        currentConversationId = null;
+        updateConversationTitleBar(null);
+    }
+}
+
+async function getCurrentConversationId() {
+    try {
+        const response = await fetch('/conversation/current');
+        const data = await response.json();
+
+        if (data.success && data.conversation && data.conversation.id) {
+            currentConversationId = data.conversation.id;
+            return data.conversation.id;
+        }
+        return null;
+    } catch (e) {
+        console.error('Failed to get current conversation ID:', e);
+        return null;
     }
 }
 
@@ -1105,7 +1148,6 @@ function renderConversationList(conversations) {
         const item = document.createElement('div');
         item.className = 'conv-item' + (conv.id === currentConversationId ? ' active' : '');
 
-        // Store conversation data on the element for easy access during filtering
         item.dataset.convId = conv.id;
         item.dataset.convData = JSON.stringify(conv);
 
@@ -1124,14 +1166,7 @@ function renderConversationList(conversations) {
         const actions = document.createElement('div');
         actions.className = 'conv-item-actions';
 
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'conv-action-btn rename';
-        renameBtn.textContent = 'Rename';
-        renameBtn.onclick = (e) => {
-            e.stopPropagation();
-            renameConversation(conv.id, conv.title);
-        };
-
+        // Only delete button, no rename
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'conv-action-btn delete';
         deleteBtn.textContent = 'Delete';
@@ -1140,7 +1175,6 @@ function renderConversationList(conversations) {
             deleteConversation(conv.id);
         };
 
-        actions.appendChild(renameBtn);
         actions.appendChild(deleteBtn);
         meta.appendChild(date);
         meta.appendChild(actions);
@@ -1150,9 +1184,243 @@ function renderConversationList(conversations) {
         list.appendChild(item);
     });
 
-    // Re-apply filter after render
     if (currentSearchQuery) {
         filterConversations(currentSearchQuery);
+    }
+}
+
+async function newConversation() {
+    if (isStreaming) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/conversation/new', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: 'New Conversation' })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.conversation) {
+            currentConversationId = data.conversation.id;
+            lastMessageIndex = 0;
+
+            updateConversationTitleBar(data.conversation.title);
+
+            const wrappers = chat.querySelectorAll('.message-wrapper');
+            wrappers.forEach(wrapper => wrapper.remove());
+
+            await loadConversations();
+            closeSidebar();
+        }
+    } catch (e) {
+        console.error('Failed to create new conversation:', e);
+    }
+}
+
+
+// Internal helper to load a conversation without closing the sidebar
+async function loadConversationInternal(convId, cachedMessages = null) {
+    try {
+        // Use cached messages if available (avoids extra fetch)
+        if (cachedMessages) {
+            currentConversationId = convId;
+            renderAllMessages(cachedMessages);
+            lastMessageIndex = cachedMessages.length;
+            return;
+        }
+
+        const response = await fetch('/conversation/load?id=' + convId);
+        const data = await response.json();
+
+        if (data.success && data.conversation) {
+            currentConversationId = convId;
+            renderAllMessages(data.conversation.messages || []);
+            lastMessageIndex = (data.conversation.messages || []).length;
+        }
+    } catch (e) {
+        console.error('Failed to load conversation internally:', e);
+    }
+}
+
+async function loadConversation(convId) {
+    if (isStreaming) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/conversation/load?id=' + convId);
+        const data = await response.json();
+
+        if (data.success && data.conversation) {
+            currentConversationId = convId;
+            const messages = data.conversation.messages || [];
+            renderAllMessages(messages, true);
+            // Use total from response, or calculate from last message index
+            lastMessageIndex = data.conversation.total ||
+            (messages.length > 0 ? messages[messages.length - 1].index + 1 : 0);
+            await loadConversations();
+            closeSidebar();
+        } else {
+            console.error('Failed to load conversation:', data.error);
+        }
+    } catch (e) {
+        console.error('Failed to load conversation:', e);
+    }
+}
+
+// Note: Conversations are auto-saved by the backend when messages are added.
+// No explicit save endpoint exists. This function is kept for potential future use
+// or for triggering a UI state sync.
+async function saveCurrentConversation() {
+    // Backend auto-saves, so this is a no-op for now
+    // Refresh the conversation list to reflect any changes
+    await loadConversations();
+}
+
+async function deleteConversation(convId) {
+    if (!confirm('Delete this conversation?')) return;
+
+    try {
+        const response = await fetch('/conversation/delete?id=' + convId, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // If we deleted the current conversation, create a new one
+            if (currentConversationId === convId) {
+                currentConversationId = null;
+                lastMessageIndex = 0;
+
+                // Clear the chat display
+                const wrappers = chat.querySelectorAll('.message-wrapper');
+                wrappers.forEach(wrapper => wrapper.remove());
+
+                // Create a new conversation
+                await newConversation();
+            } else {
+                await loadConversations();
+            }
+        }
+    } catch (e) {
+        console.error('Failed to delete conversation:', e);
+    }
+}
+
+async function renameConversation(convId, currentTitle) {
+    const newTitle = prompt('Enter new name:', currentTitle);
+    if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) return;
+
+    // The backend only allows renaming the CURRENT conversation
+    // Strategy: if renaming a different conversation, load it first, rename, then restore
+    const wasCurrentConversation = currentConversationId === convId;
+    const previousConvId = currentConversationId;
+
+    try {
+        // If this is not the current conversation, we need to load it first
+        if (!wasCurrentConversation) {
+            const loadResponse = await fetch('/conversation/load?id=' + convId);
+            const loadData = await loadResponse.json();
+
+            if (!loadData.success) {
+                alert('Failed to load conversation for renaming');
+                return;
+            }
+        }
+
+        // Now rename it (it's the current conversation)
+        const response = await fetch('/conversation/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle.trim() })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Refresh conversation list
+            await loadConversations();
+
+            // If we loaded a different conversation, restore the previous one
+            if (!wasCurrentConversation && previousConvId) {
+                await loadConversationInternal(previousConvId);
+            }
+
+            // Update the current conversation ID if we renamed the current one
+            if (wasCurrentConversation) {
+                // Title changed but ID stays the same
+            }
+        } else {
+            alert('Failed to rename: ' + (data.error || 'Unknown error'));
+
+            // Restore previous conversation if we changed it
+            if (!wasCurrentConversation && previousConvId) {
+                await loadConversationInternal(previousConvId);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to rename conversation:', e);
+
+        // Restore previous conversation if we changed it
+        if (!wasCurrentConversation && previousConvId) {
+            try {
+                await loadConversationInternal(previousConvId);
+            } catch (restoreErr) {
+                console.error('Failed to restore conversation:', restoreErr);
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Conversation Title Bar Management
+// =============================================================================
+
+function updateConversationTitleBar(title = null) {
+    const titleBar = document.getElementById('conv-title-bar');
+    const titleText = document.getElementById('conv-title-text');
+
+    if (!title && currentConversationId === null) {
+        // No active conversation
+        titleBar.classList.add('no-conversation');
+        titleText.textContent = 'New Conversation';
+    } else {
+        titleBar.classList.remove('no-conversation');
+        titleText.textContent = title || 'New Conversation';
+    }
+}
+
+async function renameCurrentConversation() {
+    if (currentConversationId === null) {
+        return;
+    }
+
+    const titleText = document.getElementById('conv-title-text');
+    const currentTitle = titleText.textContent;
+    const newTitle = prompt('Enter new name:', currentTitle);
+
+    if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) return;
+
+    try {
+        const response = await fetch('/conversation/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle.trim() })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            updateConversationTitleBar(newTitle.trim());
+            await loadConversations();
+        } else {
+            alert('Failed to rename: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to rename conversation:', e);
     }
 }
 
@@ -1289,7 +1557,6 @@ function escapeRegex(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
 }
 
-
 function formatDate(timestamp) {
     if (!timestamp) return '';
     const date = new Date(timestamp);
@@ -1302,111 +1569,6 @@ function formatDate(timestamp) {
     if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
 
     return date.toLocaleDateString();
-}
-
-async function newConversation() {
-    if (lastMessageIndex > 0) {
-        await saveCurrentConversation();
-    }
-
-    try {
-        await fetch('/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: '/new' })
-        });
-    } catch (e) {
-        console.error('Failed to clear backend:', e);
-    }
-
-    currentConversationId = null;
-    lastMessageIndex = 0;
-
-    const wrappers = chat.querySelectorAll('.message-wrapper');
-    wrappers.forEach(wrapper => wrapper.remove());
-
-    await loadConversations();
-    closeSidebar();
-}
-
-async function loadConversation(convId) {
-    try {
-        const response = await fetch('/conversation/load?id=' + convId);
-        const data = await response.json();
-
-        if (data.success && data.conversation) {
-            currentConversationId = convId;
-            renderAllMessages(data.conversation.messages || [], true);
-            lastMessageIndex = data.conversation.messages.length;
-            await loadConversations();
-            closeSidebar();
-        }
-    } catch (e) {
-        console.error('Failed to load conversation:', e);
-    }
-}
-
-async function saveCurrentConversation() {
-    if (lastMessageIndex === 0) return;
-
-    try {
-        const response = await fetch('/conversation/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: currentConversationId })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-            currentConversationId = data.id;
-            await loadConversations();
-        }
-    } catch (e) {
-        console.error('Failed to save conversation:', e);
-    }
-}
-
-async function deleteConversation(convId) {
-    if (!confirm('Delete this conversation?')) return;
-
-    try {
-        const response = await fetch('/conversation/delete?id=' + convId, { method: 'POST' });
-        const data = await response.json();
-
-        if (data.success) {
-            if (currentConversationId === convId) {
-                currentConversationId = null;
-                const wrappers = chat.querySelectorAll('.message-wrapper');
-                wrappers.forEach(wrapper => wrapper.remove());
-                lastMessageIndex = 0;
-            }
-            await loadConversations();
-        }
-    } catch (e) {
-        console.error('Failed to delete conversation:', e);
-    }
-}
-
-async function renameConversation(convId, currentTitle) {
-    const newTitle = prompt('Enter new name:', currentTitle);
-    if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) return;
-
-    try {
-        const response = await fetch('/conversation/rename', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: convId, title: newTitle.trim() })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-            await loadConversations();
-        } else {
-            alert('Failed to rename: ' + data.error);
-        }
-    } catch (e) {
-        console.error('Failed to rename conversation:', e);
-    }
 }
 
 // =============================================================================
@@ -1802,19 +1964,22 @@ async function send() {
 
     clearInput();
 
+    // Track if we started without a conversation (for lazy creation)
+    const startedWithoutConversation = currentConversationId === null;
+
     // Create user message element
     const userWrapper = document.createElement('div');
     userWrapper.className = message.trim().startsWith('/')
-        ? 'message-wrapper user_command'
-        : 'message-wrapper user';
+    ? 'message-wrapper user_command'
+    : 'message-wrapper user';
     userWrapper.classList.add('animate-in');
     userWrapper.setAttribute('role', 'article');
     userWrapper.dataset.index = 'pending';
 
     const userMsgDiv = document.createElement('div');
     userMsgDiv.className = message.trim().startsWith('/')
-        ? 'message user_command'
-        : 'message user';
+    ? 'message user_command'
+    : 'message user';
 
     if (message.trim().startsWith('/')) {
         userMsgDiv.innerHTML = `<pre>${escapeHtml(message)}</pre>`;
@@ -1861,7 +2026,7 @@ async function send() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message }),
-            signal: currentController.signal
+                                     signal: currentController.signal
         });
 
         const reader = response.body.getReader();
@@ -1892,7 +2057,23 @@ async function send() {
                             return;
                         }
 
-                        // Handle reasoning tokens
+                        if (data.type === 'content') {
+                            const token = data.content || '';
+                            if (token) {
+                                if (!streamStarted) {
+                                    streamStarted = true;
+                                    typing.classList.remove('show');
+                                    aiWrapper.classList.remove('hidden');
+                                }
+                                // Only accumulate if not frozen
+                                if (!streamFrozen) {
+                                    aiContent += token;
+                                    updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
+                                    scrollToBottomDelayed();
+                                }
+                            }
+                        }
+
                         if (data.type === 'reasoning') {
                             if (!streamStarted) {
                                 streamStarted = true;
@@ -1900,24 +2081,32 @@ async function send() {
                                 aiWrapper.classList.remove('hidden');
                             }
                             hasReasoning = true;
-                            aiReasoning += data.text || '';
-                            updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
-                            scrollToBottomDelayed();
-                        }
-
-                        // Handle content tokens
-                        if (data.type === 'content') {
-                            const token = data.text || data.token || '';
-                            if (token) {
-                                if (!streamStarted) {
-                                    streamStarted = true;
-                                    typing.classList.remove('show');
-                                    aiWrapper.classList.remove('hidden');
-                                }
-                                aiContent += token;
+                            // Only accumulate if not frozen
+                            if (!streamFrozen) {
+                                aiReasoning += data.content || '';
                                 updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
                                 scrollToBottomDelayed();
                             }
+                        }
+
+                        if (data.type === 'new_turn') {
+                            // Start a new assistant turn during tool processing
+                            currentTurnIndex++;
+                            aiContent = '';
+                            aiReasoning = '';
+
+                            // Create a new turn container if needed
+                            if (!aiWrapper.querySelector('.turn-container')) {
+                                aiMsgDiv.innerHTML = '<div class="turn-container current"></div>';
+                            }
+
+                            // Create previous turn divs for earlier content
+                            const prevTurns = streamingTurns.map(t =>
+                            `<div class="assistant-turn">${renderMarkdown(t.content)}</div>`
+                            ).join('');
+
+                            // Add tool decisions container
+                            aiMsgDiv.innerHTML = prevTurns + '<div class="turn-container current"></div>';
                         }
 
                         // Legacy token format (backward compatibility)
@@ -1930,6 +2119,10 @@ async function send() {
                             aiContent += data.token;
                             updateStreamingContent(aiMsgDiv, aiContent, aiReasoning);
                             scrollToBottomDelayed();
+                        }
+
+                        if (data.done) {
+                            streamingTurns.push({ content: aiContent, reasoning: aiReasoning });
                         }
 
                         if (data.error) {
@@ -1957,6 +2150,20 @@ async function send() {
         aiWrapper.remove();
         await syncMessages();
         await saveCurrentConversation();
+
+        // If we started without a conversation, fetch the new ID and title
+        if (startedWithoutConversation) {
+            const convId = await getCurrentConversationId();
+            if (convId) {
+                // Fetch the title too
+                const response = await fetch('/conversation/current');
+                const data = await response.json();
+                if (data.success && data.conversation) {
+                    updateConversationTitleBar(data.conversation.title);
+                }
+            }
+            await loadConversations();
+        }
     }
 }
 
@@ -1980,6 +2187,7 @@ function updateStreamingContent(msgDiv, content, reasoning) {
 function finishStream() {
     setInputState(false, false, false);
     isStreaming = false;
+    streamFrozen = false;
     currentController = null;
     currentStreamId = null;
     inputField.focus();

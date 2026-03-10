@@ -28,19 +28,16 @@
             <div class="sidebar-header">
                 <span class="sidebar-title">Conversations</span>
             </div>
-            <div class="sidebar-header">
-                <span class="sidebar-title">Conversations</span>
-            </div>
             <div class="sidebar-search">
-                <input type="text" 
-                       class="sidebar-search-input" 
-                       id="conv-search" 
-                       placeholder="Search conversations..." 
+                <input type="text"
+                       class="sidebar-search-input"
+                       id="conv-search"
+                       placeholder="Search conversations..."
                        oninput="filterConversations(this.value)"
                        aria-label="Search conversations">
-                <button class="search-toggle" 
-                        id="search-toggle" 
-                        onclick="toggleSearchMode()" 
+                <button class="search-toggle"
+                        id="search-toggle"
+                        onclick="toggleSearchMode()"
                         title="Toggle content search"
                         aria-label="Toggle search in content"
                         aria-pressed="false">
@@ -85,7 +82,7 @@
                             </svg>
                         </button>
                         <div class="status-dot" id="status" role="status" aria-label="Connection status"></div>
-                        <h1>AI Chat</h1>
+                        <h1>OptiClaw</h1>
                     </div>
                     <div class="header-right">
                         <button class="header-btn" id="search-btn" onclick="toggleSearch()" title="Search messages (Ctrl+F)">
@@ -116,6 +113,17 @@
                         <button class="header-btn" onclick="clearChat()" title="Clear chat">Clear</button>
                     </div>
                 </header>
+
+                <!-- Conversation Title Bar -->
+                <div class="conv-title-bar" id="conv-title-bar">
+                    <span class="conv-title-text" id="conv-title-text">New Conversation</span>
+                    <button class="conv-title-rename" id="conv-title-rename" onclick="renameCurrentConversation()" title="Rename conversation">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                    </button>
+                </div>
 
                 <div class="search-container" id="search-container">
                     <input type="text" class="search-input" id="search-input" placeholder="Search messages..." oninput="performSearch(this.value)">

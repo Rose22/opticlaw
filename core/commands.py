@@ -95,35 +95,35 @@ class Commands:
 
         return "\n\n".join(output)
 
-    async def process_input(self, message: str):
+    async def process_input(self, message: dict):
         """processes user input and detects special commands that control opticlaw"""
-        message_orig = message
-        message = message.strip().lower()
+        message_content_orig = message.get("content")
+        message_content = message.get("content").strip().lower()
         cmd_prefix = core.config.get("cmd_prefix", "/")
-        cmd_prefix_index = message.find(cmd_prefix)+len(cmd_prefix)
+        cmd_prefix_index = message_content.find(cmd_prefix)+len(cmd_prefix)
 
         # why not lol
-        if message_orig.startswith("STOP"):
+        if message_content_orig.startswith("STOP"):
             await self.channel.manager.API.cancel()
             return "stopped!"
 
-        if not message.startswith(cmd_prefix):
+        if not message_content.startswith(cmd_prefix):
             return None
 
         # always use temporary commands if tools are turned off. command output being seen by the AI is not useful and usually not wanted in that case
         if not core.config.get("tools"):
             self.channel._last_cmd_was_temporary = True
 
-        cmd = message[cmd_prefix_index:].split()
+        cmd = message_content[cmd_prefix_index:].split()
         args = cmd[1:]
 
         match cmd[0]:
             case "new":
-                self.channel.manager.API._messages = []
+                self.channel.context.clear_messages()
                 return "New session started."
             case "clear":
                 # alias for "new"
-                self.channel.manager.API._messages = []
+                self.channel.context.clear_messages()
                 return "New session started."
             # case "undo":
             #     self.channel.manager.API._messages.pop()
@@ -275,7 +275,7 @@ class Commands:
                 if not core.config.get("context_window"):
                     return "CONTEXT DISABLED"
 
-                context = await self.channel.manager.API.build_context(system_prompt=True)
+                context = await self.channel.context.build(system_prompt=True)
                 if not context:
                     return "BLANK"
 
@@ -302,7 +302,7 @@ class Commands:
                     context_display.append(f"== disabled prompts ==\n{disabled_prompts_str}")
 
                 ctx_string = ""
-                context_size = await self.channel.manager.API.get_context_size()
+                context_size = await self.channel.context.get_size()
                 for key, value in context_size.items():
                     ctx_string += f"{key}: {value}\n"
                 context_display.append(f"== context size ==\n{ctx_string}")

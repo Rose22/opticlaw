@@ -22,7 +22,7 @@ class Scheduler(core.module.Module):
                                 del(tools[index])
 
                         action = job.get("action")
-                        if self.manager.channel:
+                        if self.channel:
                             message = await self.manager.API._recv(
                                 await self.manager.API._request([
                                     {
@@ -35,7 +35,7 @@ class Scheduler(core.module.Module):
                                 tools=tools
                             )
                             if message:
-                                await self.manager.channel.announce(message, "schedule")
+                                await self.channel.announce(message, "schedule")
                                 self.schedule.pop(self._get_index(job.get("id")))
                                 self.schedule.save()
 

@@ -16,7 +16,7 @@ class Webui(core.module.Module):
 
         # Get the webui channel
         webui = None
-        for channel_name, channel in self.manager.channels.items():
+        for channel_name, channel in self.channels.items():
             if channel_name == "webui":
                 webui = channel
                 break
@@ -53,7 +53,7 @@ class Webui(core.module.Module):
         """
 
         webui = None
-        for channel_name, channel in self.manager.channels.items():
+        for channel_name, channel in self.channels.items():
             if channel_name == "webui":
                 webui = channel
                 break

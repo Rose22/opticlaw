@@ -8,7 +8,7 @@ class Module:
 
     def __init__(self, manager, channel=None):
         self.manager = manager
-        self.channel = channel
+        self.channel = channel # later set by the channel base class, _set_as_active_channel()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

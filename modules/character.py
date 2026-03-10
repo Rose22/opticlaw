@@ -79,7 +79,7 @@ class Character(core.module.Module):
         if not character:
             return f"character {name} does not exist!"
         response = await self.switch(character)
-        #await self.manager.channel.send("user", f"Hi {name}")
+        #await self.channel.send("user", f"Hi {name}")
         return f"character switched to {character}"
 
     async def on_command_help(self):

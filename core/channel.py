@@ -10,58 +10,122 @@ class Channel:
     """Base class for channels"""
 
     def __init__(self, manager):
-        self.name = self.__class__.__name__
+        self.name = core.module.get_name(self)
         self.manager = manager
         self.commands = core.commands.Commands(self)
         self._last_cmd_was_temporary = False
+        self.context = core.context.Context(self) # each channel has its own context window
 
+        self.tc_manager = core.toolcalls.ToolcallManager(self)
 
-    async def send(self, role: str, message: str, **kwargs):
+    async def _set_as_active_channel(self):
+        self.manager.channel = self
+
+        # give all modules a way to access this channel
+        for module_name, module in self.manager.modules.items():
+            module.channel = self
+
+    async def send(self, message: dict):
+        print(message)
+
+        # as soon as user sends a message in this channel, set current channel (tracked in the manager) to this one
+        await self._set_as_active_channel()
+
         """sends a message to the AI from within the current channel"""
         if self._last_cmd_was_temporary:
             # Remove the last two messages: the command and the command_response
             # We pop twice to ensure both the trigger and the result are gone.
-            if len(self.manager.API._messages) >= 2:
-                self.manager.API._messages.pop()
-                self.manager.API._messages.pop()
+            if len(await self.context.chat.get()) >= 2:
+                await self.context.chat.pop()
+                await self.context.chat.pop()
                 self._last_cmd_was_temporary = False
 
-        cmd = await self.commands.process_input(message)
-        if cmd:
-            # insert /command into messages so that it gets properly tracked and displayed
-            await self.manager.API.insert_message(f"command", message)
+        cmd_response = None
+        if message.get("role", "user") == "user":
+            cmd_response = await self.commands.process_input(message)
+
+        if cmd_response:
+            # insert /command into context so that it gets properly tracked and displayed
+            await self.context.chat.add({"role": "user", "content": message.get("content")})
 
             # insert and return the command response without sending it to the AI
-            await self.manager.API.insert_message(f"command_response", cmd)
-            return cmd
+            await self.context.chat.add({"role": "assistant", "content": f"[Command Output]: {''.join(cmd_response)}"})
+            return cmd_response
         else:
-            # if not a command, send the message to the AI and return it's response (context insertion happens in the API.send() method)
-            return await self.manager.API.send(role, message, channel=self, stream=False, **kwargs)
+            # if not a command, send the message to the AI and return it's response
 
-    async def send_stream(self, role: str, message: str, **kwargs):
+            # add sent message to context
+            await self.context.chat.add(message)
+
+            context = await self.context.build(system_prompt=True)
+
+            # then request AI response and add it to context
+            response = await self.manager.API.send(context)
+            await self.context.chat.add({"role": "assistant", "content": response})
+            return response
+
+    async def send_stream(self, message: dict):
+        # as soon as user sends a message in this channel, set current channel (tracked in the manager) to this one
+        await self._set_as_active_channel()
+
         """sends a message to the AI from within the current channel, streaming version"""
         if self._last_cmd_was_temporary:
-            if len(self.manager.API._messages) >= 2:
-                self.manager.API._messages.pop()
-                self.manager.API._messages.pop()
+            if len(await self.context.chat.get()) >= 2:
+                await self.context.chat.pop()
+                await self.context.chat.pop()
                 self._last_cmd_was_temporary = False
 
-        cmd = await self.commands.process_input(message)
+        cmd = None
+        if message.get("role", "user") == "user":
+            cmd = await self.commands.process_input(message)
+
         if cmd:
-            # insert /command into messages so that it gets properly tracked and displayed
-            await self.manager.API.insert_message(f"command", message)
+            # insert /command into context so that it gets properly tracked and displayed
+            await self.context.chat.add({"role": "user", "content": message})
 
             # insert and return the command response without sending it to the AI
             cmd_response = []
-            for token in cmd:
-                cmd_response.append(token)
-                token_data = {"type": "content", "text": token}
+            for word in cmd:
+                cmd_response.append(word)
+                token_data = {"type": "content", "content": word}
                 yield token_data
-            await self.manager.API.insert_message(f"command_response", "".join(cmd_response))
+            await self.context.chat.add({"role": "assistant", "content": f"[Command Output]: {''.join(cmd_response)}"})
             return
         else:
-            async for token in self.manager.API.send_stream(role, message, channel=self, **kwargs):
-                yield token
+            # add to context
+            await self.context.chat.add(message)
+
+            # and stream the response to the caller of this method
+            context = await self.context.build(system_prompt=True)
+            final_content = []
+            tc_response = None
+            tool_calls_occurred = False
+            async for token in self.manager.API.send_stream(context):
+                token_type = token.get("type")
+                if token_type in ("content", "reasoning"):
+                    # this is a normal piece of streamed text
+                    final_content.append(token.get("content"))
+                    yield token
+                elif token_type == "tool_calls":
+                    tool_calls_occurred = True
+                    # Pass accumulated content to be included in tool_calls message
+
+                    async for sub_token in self.tc_manager.process(
+                        token.get("content"),
+                        initial_content="".join(final_content)
+                    ):
+                        yield sub_token
+                    # tc_manager.process() will loop until the AI no longer deems tool calls necessary
+                elif token_type == "usage":
+                    # this is the final token usage count, also emitted at the end of the stream
+                    pass
+
+            # add AI's response to context as well
+            if not tool_calls_occurred:
+                await self.context.chat.add({
+                    "role": "assistant",
+                    "content": "".join(final_content)
+                })
 
     async def announce(self, message: str, type=None, insert_message=True):
         """called externally to announce things in this channel, such as a reminder sent by the AI"""
@@ -70,7 +134,7 @@ class Channel:
 
         # insert announced message into context
         if insert_message:
-            await self.manager.API.insert_message(f"announce_{type}", message)
+            await self.context.chat.add({"role": "assistant", "content": f"[System {type}]: {message}"})
 
         # Subclass hook
         await self._announce(message, type=type)

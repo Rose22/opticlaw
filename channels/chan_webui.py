@@ -2,7 +2,7 @@
 OptiClaw WebUI - A modern chat interface for AI interactions.
 
 This module provides a Flask-based web interface that polls the backend
-for messages, treating the backend (API.get_messages()) as the single
+for messages, treating the backend (chat.get()) as the single
 source of truth for all messages including user messages, AI responses,
 commands, and announcements.
 """
@@ -75,20 +75,14 @@ class Webui(core.channel.Channel):
     """
     Web-based channel that polls the backend for messages.
 
-    The backend (manager.API.get_messages()) is the single source of truth.
-    All messages including user messages, AI responses, commands, and 
+    The backend (chat.get()) is the single source of truth.
+    All messages including user messages, AI responses, commands, and
     announcements are stored in the backend and polled by the frontend.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.main_loop = None
-
-        # Storage for saved conversations (frontend metadata only)
-        self.conversations = self.manager.conversations
-
-        # Track currently active conversation
-        self.current_conversation_id = None
 
     async def run(self):
         """Start the Flask web server."""
@@ -130,89 +124,16 @@ class Webui(core.channel.Channel):
         """
         core.log("webui", f"Announcement ({type}): {message[:50]}...")
 
-    def get_messages(self):
-        """Get all messages from the backend API."""
-        messages = self.manager.API.get_messages()
-        result = []
-
-        for i, msg in enumerate(messages):
-            role = msg.get('role', 'user')
-            content = msg.get('content', '')
-            tool_calls = msg.get('tool_calls', None)
-            tool_call_id = msg.get('tool_call_id', None)
-
-            # Include messages with content OR tool_calls OR tool responses
-            if content or tool_calls or role == 'tool':
-                result.append({
-                    'role': role,
-                    'content': content,
-                    'tool_calls': tool_calls,
-                    'tool_call_id': tool_call_id,
-                    'index': i
-                })
-
-        return result
-
-    def get_messages_since(self, since_index):
-        """Get messages from the backend starting from an index."""
-        messages = self.manager.API.get_messages()
-        result = []
-
-        for i in range(since_index, len(messages)):
-            msg = messages[i]
-            role = msg.get('role', 'user')
-            content = msg.get('content', '')
-            tool_calls = msg.get('tool_calls', None)
-            tool_call_id = msg.get('tool_call_id', None)
-
-            # Include messages with content OR tool_calls OR tool responses
-            if content or tool_calls or role == 'tool':
-                result.append({
-                    'role': role,
-                    'content': content,
-                    'tool_calls': tool_calls,
-                    'tool_call_id': tool_call_id,
-                    'index': i
-                })
-
-        return result
-
-    def set_messages(self, messages):
-        """Set messages in the backend API."""
-        backend_messages = []
-
-        for msg in messages:
-            role = msg.get('role', 'user')
-            content = msg.get('content', '')
-            tool_calls = msg.get('tool_calls')
-            tool_call_id = msg.get('tool_call_id')
-
-            if role == 'ai':
-                role = 'assistant'
-
-            # Build the message dict dynamically
-            clean_msg = {'role': role}
-
-            if content:
-                clean_msg['content'] = content
-
-            if tool_calls:
-                clean_msg['tool_calls'] = tool_calls
-
-            if tool_call_id:
-                clean_msg['tool_call_id'] = tool_call_id
-
-            backend_messages.append(clean_msg)
-
-        self.manager.API.set_messages(backend_messages)
+def _run_async(coro):
+    """Helper to run async coroutines from sync Flask routes."""
+    if not channel_instance or not channel_instance.main_loop:
+        return None
+    future = asyncio.run_coroutine_threadsafe(coro, channel_instance.main_loop)
+    return future.result()
 
 # =============================================================================
 # Flask Routes
 # =============================================================================
-
-HTML_TEMPLATE = None
-with open(core.get_path("channels/webui/index.html"), "r") as f:
-    HTML_TEMPLATE = f.read()
 
 @app.route('/')
 def index():
@@ -225,29 +146,19 @@ def get_messages():
     if not channel_instance:
         return jsonify({'messages': [], 'count': 0})
 
-    # Access the API client through the manager
-    messages = channel_instance.manager.API.get_messages()
+    messages = _run_async(channel_instance.context.chat.get()) or []
     result = []
 
     for i, msg in enumerate(messages):
-        role = msg.get('role', 'user')
-        content = msg.get('content', '')
-        tool_calls = msg.get('tool_calls')
-        tool_call_id = msg.get('tool_call_id')
-        reasoning_content = msg.get('reasoning_content')
-
-        if content or tool_calls or role == 'tool':
-            msg_data = {
-                'role': role,
-                'content': content,
-                'tool_calls': tool_calls,
-                'tool_call_id': tool_call_id,
-                'index': i
-            }
-            # Only include reasoning if it exists
-            if reasoning_content:
-                msg_data['reasoning_content'] = reasoning_content
-            result.append(msg_data)
+        msg_data = {
+            'role': msg.get('role', 'user'),
+            'content': msg.get('content', ''),
+            'tool_calls': msg.get('tool_calls'),
+            'tool_call_id': msg.get('tool_call_id'),
+            'reasoning_content': msg.get('reasoning_content'),
+            'index': i
+        }
+        result.append(msg_data)
 
     return jsonify({
         'messages': result,
@@ -265,28 +176,20 @@ def get_messages_since():
     except ValueError:
         since_index = 0
 
-    messages = channel_instance.manager.API.get_messages()
+    messages = _run_async(channel_instance.context.chat.get()) or []
     result = []
 
     for i in range(since_index, len(messages)):
         msg = messages[i]
-        role = msg.get('role', 'user')
-        content = msg.get('content', '')
-        tool_calls = msg.get('tool_calls')
-        tool_call_id = msg.get('tool_call_id')
-        reasoning_content = msg.get('reasoning_content')
-
-        if content or tool_calls or role == 'tool':
-            msg_data = {
-                'role': role,
-                'content': content,
-                'tool_calls': tool_calls,
-                'tool_call_id': tool_call_id,
-                'index': i
-            }
-            if reasoning_content:
-                msg_data['reasoning_content'] = reasoning_content
-            result.append(msg_data)
+        msg_data = {
+            'role': msg.get('role', 'user'),
+            'content': msg.get('content', ''),
+            'tool_calls': msg.get('tool_calls'),
+            'tool_call_id': msg.get('tool_call_id'),
+            'reasoning_content': msg.get('reasoning_content'),
+            'index': i  # Explicitly include index
+        }
+        result.append(msg_data)
 
     return jsonify({
         'messages': result,
@@ -311,35 +214,33 @@ def stream_message():
 
         async def collect_tokens():
             try:
-                # Use the channel's send_stream which calls API.send_stream
-                async for token_data in channel_instance.send_stream("user", user_message):
+                async for token_data in channel_instance.send_stream({"role": "user", "content": user_message}):
                     if stream_id in stream_cancellations:
                         stream_cancellations.discard(stream_id)
                         token_queue.put(('cancelled', True))
                         break
-
-                    # Pass the dict through: {'type': 'content'|'reasoning', 'text': '...'}
                     token_queue.put(token_data)
             except Exception as e:
                 token_queue.put(('error', str(e)))
             finally:
                 token_queue.put(done)
 
-        future = asyncio.run_coroutine_threadsafe(collect_tokens(), channel_instance.main_loop)
+        future = asyncio.run_coroutine_threadsafe(
+            collect_tokens(),
+            channel_instance.main_loop
+        )
 
-        # Send stream ID first
         yield f"data: {json.dumps({'id': stream_id})}\n\n"
 
         while True:
             item = token_queue.get()
 
             if item is done:
-                total = len(channel_instance.manager.API.get_messages())
+                total = len(_run_async(channel_instance.context.chat.get()))
                 yield f"data: {json.dumps({'done': True, 'total': total})}\n\n"
                 break
 
             elif isinstance(item, tuple):
-                # Handle special signals (error, cancelled)
                 if item[0] == 'error':
                     yield f"data: {json.dumps({'error': item[1]})}\n\n"
                     break
@@ -348,16 +249,17 @@ def stream_message():
                     break
 
             elif isinstance(item, dict):
-                # New token format: {'type': 'content', 'text': '...'} or {'type': 'reasoning', 'text': '...'}
                 yield f"data: {json.dumps(item)}\n\n"
 
             else:
-                # Fallback for legacy string tokens
                 yield f"data: {json.dumps({'type': 'content', 'text': str(item)})}\n\n"
 
         future.result()
 
-    return Response(generate(), mimetype='text/event-stream')
+    response = Response(generate(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
 
 @app.route('/send', methods=['POST'])
 def send_message():
@@ -365,7 +267,6 @@ def send_message():
     Send a message and wait for complete response.
 
     Used for commands that need immediate response.
-    The base Channel class handles inserting both the command and response.
     """
     global channel_instance
 
@@ -373,13 +274,12 @@ def send_message():
     user_message = data.get('message', '')
 
     future = asyncio.run_coroutine_threadsafe(
-        channel_instance.send("user", user_message),
+        channel_instance.send({"role": "user", "content": user_message}),
         channel_instance.main_loop
     )
     response = future.result()
 
-    # Return response and updated message count
-    total = len(channel_instance.manager.API.get_messages())
+    total = len(_run_async(channel_instance.context.chat.get()))
     return jsonify({
         'response': response,
         'total': total
@@ -394,13 +294,14 @@ def edit_message():
     index = data.get('index', 0)
     new_content = data.get('content', '')
 
-    messages = channel_instance.manager.API.get_messages()
+    messages = _run_async(channel_instance.context.chat.get())
 
     if 0 <= index < len(messages):
         if messages[index].get('role') not in ('user', 'assistant'):
             return jsonify({'success': False, 'error': 'Cannot edit this message type'})
 
         messages[index]['content'] = new_content
+        _run_async(channel_instance.context.chat.set(messages))
         core.log("webui", f"Edited message {index}")
         return jsonify({'success': True, 'total': len(messages)})
 
@@ -414,16 +315,15 @@ def delete_message():
     data = request.get_json()
     index = data.get('index', 0)
 
-    messages = channel_instance.manager.API.get_messages()
+    messages = _run_async(channel_instance.context.chat.get())
 
     if 0 <= index < len(messages):
         if messages[index].get('role') not in ('user', 'assistant', 'command', 'command_response'):
             if not messages[index].get('role', '').startswith('announce_'):
                 return jsonify({'success': False, 'error': 'Cannot delete this message type'})
 
-        # Keep only messages before the index
-        channel_instance.manager.API.set_messages(messages[:index])
-        remaining = len(channel_instance.manager.API.get_messages())
+        _run_async(channel_instance.context.chat.set(messages[:index]))
+        remaining = len(_run_async(channel_instance.context.chat.get()))
         core.log("webui", f"Deleted messages from index {index}, {remaining} remaining")
         return jsonify({'success': True, 'remaining': remaining})
 
@@ -458,14 +358,17 @@ def upload_file():
         content = base64.b64decode(content_b64).decode('utf-8', errors='replace')
 
         async def insert_file():
-            await channel_instance.manager.API.insert_message("user", f"[File: {filename}]\n{content}...")
+            await channel_instance.context.chat.add({
+                "role": "user",
+                "content": f"[File: {filename}]\n{content}..."
+            })
 
         asyncio.run_coroutine_threadsafe(
             insert_file(),
             channel_instance.main_loop
         ).result()
 
-        total = len(channel_instance.manager.API.get_messages())
+        total = len(_run_async(channel_instance.context.chat.get()))
         return jsonify({'success': True, 'total': total})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -473,6 +376,7 @@ def upload_file():
 # =============================================================================
 # Conversation Management Routes
 # =============================================================================
+
 @app.route('/conversations')
 def list_conversations():
     """List all saved conversations with message content for searching."""
@@ -481,10 +385,10 @@ def list_conversations():
     if not channel_instance:
         return jsonify({'conversations': []})
 
+    all_chats = _run_async(channel_instance.context.chat.get_all())
     conversations = []
-    for conv in channel_instance.conversations:
-        # Include up to the first 5 messages for preview/search
-        # Truncate each message to 500 chars to keep response small
+
+    for conv in all_chats:
         messages_preview = []
         for msg in conv.get('messages', [])[:5]:
             content = msg.get('content', '')
@@ -500,71 +404,15 @@ def list_conversations():
             'created': conv.get('created'),
             'updated': conv.get('updated'),
             'message_count': len(conv.get('messages', [])),
-            'messages': messages_preview  # Added for search
+            'messages': messages_preview
         })
 
     conversations.sort(key=lambda x: x.get('updated', ''), reverse=True)
     return jsonify({'conversations': conversations})
 
-@app.route('/conversation/save', methods=['POST'])
-def save_conversation():
-    """Save current conversation from backend to StorageList."""
-    global channel_instance
-
-    if not channel_instance:
-        return jsonify({'success': False, 'error': 'Channel not available'})
-
-    data = request.get_json() if request.is_json else {}
-    conv_id = data.get('id')
-
-    # Get messages from backend (source of truth)
-    messages = channel_instance.get_messages()
-
-    # Generate title from first user message
-    title = 'New Conversation'
-    for msg in messages:
-        if msg.get('role') == 'user':
-            content = msg.get('content', '')
-            if content and not content.startswith('/') and not content.startswith("[Command") and not content.startswith("[System"):
-                title = content[:50]
-                if len(content) > 50:
-                    title += '...'
-                break
-
-    now = datetime.utcnow().isoformat()
-
-    if conv_id:
-        # Update existing conversation
-        for i, conv in enumerate(channel_instance.conversations):
-            if conv.get('id') == conv_id:
-                channel_instance.conversations[i] = {
-                    'id': conv_id,
-                    'title': conv.get("title"),
-                    'messages': messages,
-                    'created': conv.get('created', now),
-                    'updated': now
-                }
-                channel_instance.conversations.save()
-                channel_instance.current_conversation_id = conv_id
-                return jsonify({'success': True, 'id': conv_id})
-
-    # Create new conversation
-    conv_id = conv_id or str(uuid.uuid4())[:8]
-    channel_instance.conversations.append({
-        'id': conv_id,
-        'title': title,
-        'messages': messages,
-        'created': now,
-        'updated': now
-    })
-    channel_instance.conversations.save()
-    channel_instance.current_conversation_id = conv_id
-
-    return jsonify({'success': True, 'id': conv_id})
-
 @app.route('/conversation/load')
 def load_conversation():
-    """Load conversation from StorageList and push to backend."""
+    """Load an existing conversation by ID."""
     global channel_instance
 
     if not channel_instance:
@@ -574,26 +422,36 @@ def load_conversation():
     if not conv_id:
         return jsonify({'success': False, 'error': 'No conversation ID provided'})
 
-    for conv in channel_instance.conversations:
-        if conv.get('id') == conv_id:
-            messages = conv.get('messages', [])
+    success = _run_async(channel_instance.context.chat.load(conv_id))
+    if not success:
+        return jsonify({'success': False, 'error': 'Conversation not found'})
 
-            # Push messages to backend
-            channel_instance.set_messages(messages)
+    messages = _run_async(channel_instance.context.chat.get()) or []
+    title = _run_async(channel_instance.context.chat.get_title())
+    loaded_id = _run_async(channel_instance.context.chat.get_id())
 
-            # Track active conversation
-            channel_instance.current_conversation_id = conv_id
+    # Add index to each message
+    result = []
+    for i, msg in enumerate(messages):
+        msg_data = {
+            'role': msg.get('role', 'user'),
+            'content': msg.get('content', ''),
+            'tool_calls': msg.get('tool_calls'),
+            'tool_call_id': msg.get('tool_call_id'),
+            'reasoning_content': msg.get('reasoning_content'),
+            'index': i
+        }
+        result.append(msg_data)
 
-            return jsonify({
-                'success': True,
-                'conversation': {
-                    'id': conv.get('id'),
-                    'title': conv.get('title', 'New Conversation'),
-                    'messages': messages
-                }
-            })
-
-    return jsonify({'success': False, 'error': 'Conversation not found'})
+    return jsonify({
+        'success': True,
+        'conversation': {
+            'id': loaded_id,
+            'title': title or 'New Conversation',
+            'messages': result,
+            'total': len(result)
+        }
+    })
 
 @app.route('/conversation/current')
 def get_current_conversation():
@@ -603,60 +461,92 @@ def get_current_conversation():
     if not channel_instance:
         return jsonify({'success': False, 'error': 'Channel not available'})
 
-    conv_id = channel_instance.current_conversation_id
+    chat = channel_instance.context.chat
 
-    if not conv_id:
+    conv_id = _run_async(chat.get_id())
+    if conv_id is None:
         return jsonify({
             'success': True,
             'current_id': None,
             'conversation': None
         })
 
-    for conv in channel_instance.conversations:
-        if conv.get('id') == conv_id:
-            return jsonify({
-                'success': True,
-                'current_id': conv_id,
-                'conversation': {
-                    'id': conv.get('id'),
-                    'title': conv.get('title', 'New Conversation'),
-                    'messages': conv.get('messages', [])
-                }
-            })
+    messages = _run_async(chat.get()) or []
+    title = _run_async(chat.get_title())
 
-    # ID set but conversation not found - clear it
-    channel_instance.current_conversation_id = None
+    # Add index to each message
+    result = []
+    for i, msg in enumerate(messages):
+        msg_data = {
+            'role': msg.get('role', 'user'),
+            'content': msg.get('content', ''),
+            'tool_calls': msg.get('tool_calls'),
+            'tool_call_id': msg.get('tool_call_id'),
+            'reasoning_content': msg.get('reasoning_content'),
+            'index': i
+        }
+        result.append(msg_data)
+
     return jsonify({
         'success': True,
-        'current_id': None,
-        'conversation': None
+        'conversation': {
+            'id': conv_id,
+            'title': title or 'New Conversation',
+            'messages': result,
+            'total': len(result)
+        }
     })
 
 @app.route('/conversation/rename', methods=['POST'])
 def rename_conversation():
-    """Rename a saved conversation."""
+    """Rename the current conversation."""
     global channel_instance
 
     if not channel_instance:
         return jsonify({'success': False, 'error': 'Channel not available'})
 
-    data = request.get_json()
-    conv_id = data.get('id')
-    new_title = data.get('title', '').strip()
+    # Only rename if we have an active conversation
+    conv_id = _run_async(channel_instance.context.chat.get_id())
+    if conv_id is None:
+        return jsonify({'success': False, 'error': 'No active conversation'})
 
-    if not conv_id:
-        return jsonify({'success': False, 'error': 'No conversation ID provided'})
+    data = request.get_json()
+    new_title = data.get('title', '').strip()
 
     if not new_title:
         return jsonify({'success': False, 'error': 'Title cannot be empty'})
 
-    for i, conv in enumerate(channel_instance.conversations):
-        if conv.get('id') == conv_id:
-            channel_instance.conversations[i]['title'] = new_title[:100]
-            channel_instance.conversations.save()
-            return jsonify({'success': True, 'title': new_title[:100]})
+    _run_async(channel_instance.context.chat.set_title(new_title))
 
-    return jsonify({'success': False, 'error': 'Conversation not found'})
+    return jsonify({'success': True, 'title': new_title})
+
+@app.route('/conversation/new', methods=['POST'])
+def new_conversation():
+    """
+    Start a fresh conversation.
+
+    Note: This explicitly creates a new empty conversation. In most cases,
+    you don't need to call this - just send a message and the chat system
+    will auto-create a conversation if needed.
+    """
+    global channel_instance
+
+    if not channel_instance:
+        return jsonify({'success': False, 'error': 'Channel not available'})
+
+    data = request.get_json() or {}
+    title = data.get('title', 'New Conversation')
+
+    _run_async(channel_instance.context.chat.new(title))
+
+    return jsonify({
+        'success': True,
+        'conversation': {
+            'id': _run_async(channel_instance.context.chat.get_id()),
+            'title': title,
+            'messages': []
+        }
+    })
 
 @app.route('/conversation/delete', methods=['POST'])
 def delete_conversation():
@@ -666,18 +556,14 @@ def delete_conversation():
     if not channel_instance:
         return jsonify({'success': False, 'error': 'Channel not available'})
 
-    conv_id = request.args.get('id') or request.get_json(silent=True).get('id')
+    data = request.get_json(silent=True) or {}
+    conv_id = data.get('id') or request.args.get('id')
 
     if not conv_id:
         return jsonify({'success': False, 'error': 'No conversation ID provided'})
 
-    for i, conv in enumerate(channel_instance.conversations):
-        if conv.get('id') == conv_id:
-            del channel_instance.conversations[i]
-            channel_instance.conversations.save()
-            return jsonify({'success': True})
-
-    return jsonify({'success': False, 'error': 'Conversation not found'})
+    _run_async(channel_instance.context.chat.delete(conv_id))
+    return jsonify({'success': True})
 
 # =============================================================================
 # PWA Support Routes
@@ -687,14 +573,14 @@ def delete_conversation():
 def manifest():
     """Serve the PWA manifest."""
     with open(core.get_path("channels/webui/manifest.json")) as f:
-        manifest = json.loads(f.read());
+        manifest = json.loads(f.read())
     return jsonify(manifest)
 
 @app.route('/sw.js')
 def service_worker():
     """Serve the service worker."""
     with open(core.get_path("channels/webui/sw.js")) as f:
-        sw_code = f.read();
+        sw_code = f.read()
     response = Response(sw_code, mimetype='application/javascript')
     response.headers['Cache-Control'] = 'no-store'
     return response

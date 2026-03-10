@@ -26,128 +26,6 @@ class APIClient():
         self._model = name
         return self._model
 
-    def count_tokens_local(self, messages: list) -> int:
-        """
-        Counts tokens locally using tiktoken.
-        Used as a fallback if the API doesn't return usage data.
-        """
-        import tiktoken
-        try:
-            # Try to get the specific tokenizer for the model (e.g. gpt-4)
-            encoding = tiktoken.encoding_for_model(self._model)
-        except KeyError:
-            # Fallback to a standard encoding for unknown/custom models
-            encoding = tiktoken.get_encoding("cl100k_base")
-
-        num_tokens = 0
-        for message in messages:
-            # OpenAI message format overhead is ~4 tokens per message
-            # <im_start>{role/name}\n{content}<im_end>\n
-            num_tokens += 4
-            for key, value in message.items():
-                if value:
-                    num_tokens += len(encoding.encode(str(value)))
-
-        # Add 2-3 tokens for the assistant priming at the end
-        num_tokens += 2
-        return num_tokens
-
-    def get_messages(self):
-        return self._messages
-    def set_messages(self, messages: list):
-        self._messages = messages
-
-    async def cancel(self):
-        self.cancel_request = True
-
-    def _insert_blank_user_msg(self, next_msg_role: str):
-        if (
-            # if we have anything at all in the messages array
-            self._messages and
-            # and the last message was not a user or tool response message
-            self._messages[-1].get("role") not in ("user", "tool") and
-            # and the last message was also not an assistant message with toolcalls
-            not self._messages[-1].get("tool_calls") and
-            # and the message we're about to post isn't by the user role
-            next_msg_role != "user"
-        ):
-            # ensure message turn order is correct
-            # assistants are allowed to output after a tool role message
-            # but not after their own message..
-            self._messages.append({"role": "user", "content": "[SYSTEM_TICK]"})
-        return True
-
-    def _convert_message(self, role: str, content: str):
-        # we need to make sure the chain is always system -> user -> assistant -> user -> ... because some models are REALLY particular about it and it's really annoying
-
-        # Convert special roles to valid API roles with prefixes
-        if role.startswith('announce_'):
-            # announce_info, announce_error, announce_important, announce_schedule
-            ann_type = role[9:]  # 'announce_info' -> 'info'
-            content = f"[System {ann_type.title()}]: {content}"
-            role = 'assistant'
-        elif role == 'command':
-            # User commands stay as user role
-            role = 'user'
-        elif role == 'command_response':
-            # Command responses appear as assistant
-            content = f"[Command Output]: {content}"
-            role = 'assistant'
-
-        # insert blank user message if applicable
-        self._insert_blank_user_msg(role)
-
-        return {"role": role, "content": content}
-
-    async def insert_message(self, role: str, content: str, num_tokens=None):
-        """inserts a message (dict with role and content) into context, trimming when needed"""
-        if not core.config.get("context_window", False):
-            # allow completely turning off context
-            return
-
-        await self.trim_messages(num_tokens=num_tokens)
-        return self._messages.append(self._convert_message(role, content))
-
-    async def trim_messages(self, max_messages: int = None, max_tokens: int = None, num_tokens: int = None):
-        """trims context to keep token consumption low"""
-
-        if not max_messages:
-            max_messages = core.config.get("max_messages", 200)
-        if not max_tokens:
-            # TODO: find a way to get max tokens. also count tokens instead of words
-            max_tokens = core.config.get("max_context", 8192)
-
-        if not num_tokens:
-            # fall back to counting messages list using tiktoken
-            num_tokens = self.count_tokens_local(self._messages)
-
-        request_too_big = False
-        context_trimmed = False
-        tokens_exceeded = (num_tokens >= max_tokens)
-        message_count_exceeded = (len(self._messages) >= max_messages)
-        num_tokens = self.count_tokens_local(self._messages)
-
-        # need to recalculate it cuz this is a while loop
-        while len(self._messages) >= max_messages or num_tokens >= max_tokens:
-            self._messages.pop(0)
-            if not self._messages:
-                request_too_big = True
-                # we've exhausted all messages. handle it later in this function
-                break
-
-            # keep recalculating tokens
-            num_tokens = self.count_tokens_local(self._messages)
-
-        if self.manager.channel:
-            if request_too_big:
-                # the entire thing was too big including user's input! inform them
-                await self.manager.channel.announce("Your request exceeds the max amount of tokens allowed. Please send a smaller request!", "error")
-            elif message_count_exceeded:
-                await self.manager.channel.announce(f"You exceeded the max amount of messages set in your settings! Context size trimmed.\n\nAmount of messages: {len(self._messages)}\nMax messages allowed: {max_messages}", "error")
-            elif context_trimmed:
-                await self.manager.channel.announce("Input was too large! Context size trimmed.\n\nSent tokens: {num_tokens}\nMax allowed tokens: {max_tokens}", "error")
-        return len(self._messages) <= max_messages
-
     async def _request(self, context, tools=None, stream=False):
         """send a request to the LLM and return the response object"""
 
@@ -173,134 +51,39 @@ class APIClient():
         if core.config.get("debug"):
             core.log("debug:response", str(response))
 
-        #core.log("request", f"CONTEXT\n{context}\n\nKWARGS\n{kwargs}")
-
         return response
 
-    async def build_context(self, system_prompt=True, end_prompt=True):
-        # context = system prompt + message history
-        context = []
-
-        # always insert system prompt at start of context
-        if system_prompt:
-            context = context+[{"role": "system", "content": await self.manager.get_system_prompt()}]
-
-        # insert message history
-        context = context+self._messages
-
-        if end_prompt:
-            histend = await self.manager.get_end_prompt()
-            # for some reason, it won't accept a 2nd system prompt. so we add it as user
-            # maybe theres a better way to do this..
-            context = context+[{"role": "user", "content": histend}]
-
-        return context
-
-    async def get_context_size(self):
-        message_history = await self.build_context(system_prompt=False)
-        sysprompt = await self.manager.get_system_prompt()
-        histend = await self.manager.get_end_prompt()
-        sysprompt_size_tokens = self.count_tokens_local([{"role": "system", "content": sysprompt}])
-        sysprompt_size_words = len(str(sysprompt).split())
-        message_hist_size_tokens = self.count_tokens_local(self._messages)
-        message_hist_size_words = len(str(message_history).split())
-        histend_size_tokens = self.count_tokens_local([{"role": "user", "content": histend}])
-        histend_size_words = len(str(histend).split())
-
-        combined_size_words = message_hist_size_words+sysprompt_size_words+histend_size_words
-
-        token_usage = self.count_tokens_local(await self.build_context(system_prompt=True))
-
-        return {
-            "system prompt size": f"{sysprompt_size_tokens} tokens | {sysprompt_size_words} words",
-            "message history size": f"{message_hist_size_tokens} tokens | {message_hist_size_words} words",
-            "end prompt size": f"{histend_size_tokens} tokens | {histend_size_words} words",
-            "total size": f"{token_usage} tokens | {combined_size_words} words",
-        }
-
-    async def send(self, role: str, content: str, system_prompt=True, channel=None, use_context=True, use_tools=True, tools=None, add_message=True, **kwargs):
+    async def send(self, context: list, system_prompt=True, use_tools=True, tools=None, **kwargs):
         """send a message to the LLM. returns a string"""
 
         self.cancel_request = False
 
-        if channel:
-            self.manager.channel = channel
-            # save name of last channel used for restoring from save later
-            self.manager.savedata["last_channel"] = core.module.get_name(channel)
-            self.manager.savedata.save()
-
-        if use_context is None:
-            use_context = core.config.get("context_window", True)
-
-        context = []
-        if use_context:
-            if add_message:
-                # try to check how big (in tokens) the request content is
-                # num_tokens = self.count_tokens_local({"role": role, "content": content})
-                # if num_tokens > core.config.get("max_tokens", 8192):
-                #     if self.manager.channel:
-                #         self.manager.channel.announce("error: request was too big!", False)
-                #     core.log("error", "request was too big!")
-                await self.insert_message(role, content)
-            context = await self.build_context(system_prompt=system_prompt)
-        else:
-            context = [{"role": role, "content": content}]
-
         # use default tools if not specified. allow overrides
         if not tools:
             tools = self.manager.tools
 
         try:
-            return await self._recv(await self._request(context, tools=(tools if use_tools else None)), system_prompt=system_prompt, use_context=use_context, context=context, use_tools=use_tools, add_message=add_message, **kwargs)
+            return await self._recv(await self._request(context, tools=(tools if use_tools else None)))
         except Exception as e:
             core.log_error("error while sending request to AI", e)
-            if core.config.get("debug"):
-                curframe = inspect.currentframe()
-                calframe = inspect.getouterframes(curframe, 2)
-                core.log(f"caller name: {calframe[1][3]}")
-            if self.manager.channel:
-                await self.manager.channel.announce(f"error while sending request to AI: {e}", "error")
             return None
 
-    async def send_stream(self, role: str, content: str, system_prompt=True, channel=None, use_context=True, use_tools=True, tools=None, add_message=True, **kwargs):
+    async def send_stream(self, context: list, use_tools=True, tools=None):
         """send a message to the LLM. is an iterable async generator"""
 
         self.cancel_request = False
 
-        if channel:
-            self.manager.channel = channel
-            # save name of last channel used for restoring from save later
-            self.manager.savedata["last_channel"] = core.module.get_name(channel)
-            self.manager.savedata.save()
-
-        if use_context is None:
-            use_context = core.config.get("context_window", True)
-
-        context = []
-        if use_context:
-            if add_message:
-                await self.insert_message(role, content)
-            context = await self.build_context(system_prompt=system_prompt)
-        else:
-            context = [{"role": role, "content": content}]
-
         # use default tools if not specified. allow overrides
         if not tools:
             tools = self.manager.tools
 
         try:
-            async for token in self._recv_stream(await self._request(context, tools=(tools if use_tools else None), stream=True, **kwargs), context=context, use_context=use_context, **kwargs):
+            async for token in self._recv_stream(await self._request(context, tools=(tools if use_tools else None), stream=True)):
                 yield token
         except Exception as e:
             core.log_error("error while sending request to AI", e)
-            if core.config.get("debug"):
-                curframe = inspect.currentframe()
-                calframe = inspect.getouterframes(curframe, 2)
-                core.log(f"caller name: {calframe[1][3]}")
-            if self.manager.channel:
-                await self.manager.channel.announce(f"error while sending request to AI: {e}", "error")
 
-    async def _recv(self, response, context=None, use_context=True, **kwargs):
+    async def _recv(self, response, use_tools=True):
         """takes a response object and extracts the message from it, handling tool calls if needed"""
 
         final_content = None
@@ -310,8 +93,6 @@ class APIClient():
             response_main = response.choices[0]
         except Exception as e:
             core.log_error("error while receiving response from AI", e)
-            if self.manager.channel:
-                await self.manager.channel.announce(f"error while receiving response from AI: {e}", "error")
             return None
 
         # Extract reasoning content if available
@@ -327,39 +108,23 @@ class APIClient():
         final_content = response_main.message.content or reasoning_content or ""
 
         # handle tool calls, if any
-        if core.config.get("tools", False) and response_main.message.tool_calls:
-            tool_results = await self.manager.handle_tool_calls(response_main.message.tool_calls, use_context=use_context)
-            if tool_results:
-                final_content += str(tool_results)
+        tool_calls = None
+        if use_tools and core.config.get("tools", False) and response_main.message.tool_calls:
+            tool_calls = response_main.message.tool_calls
 
-        # add it to context
-        token_usage = None
-        if kwargs.get("add_message"):
-            if hasattr(response, 'usage') and response.usage:
-                token_usage = response.usage.prompt_tokens
-            else:
-                # fall back to tokenizer counting if api didn't provide a token count
-                token_usage = self.count_tokens_local(context)
+        result = {}
 
-            # Build message with optional reasoning
-            assistant_msg = {"role": "assistant", "content": final_content}
-            if reasoning_content:
-                assistant_msg["reasoning_content"] = reasoning_content
-
-            await self.insert_message_obj(assistant_msg, num_tokens=token_usage)
+        if final_content:
+            result["content"] = final_content
+        if reasoning_content:
+            result["reasoning"] = reasoning_content
+        if tool_calls:
+            result["tool_calls"] = tool_calls
 
         # Return content (reasoning is stored in context but not returned to caller)
-        return final_content
+        return result
 
-    async def insert_message_obj(self, message_obj: dict, num_tokens=None):
-        """Inserts a pre-built message object into context, trimming when needed"""
-        if not core.config.get("context_window", False):
-            return
-
-        await self.trim_messages(num_tokens=num_tokens)
-        return self._messages.append(message_obj)
-
-    async def _recv_stream(self, response, use_tools=True, add_message=True, context=None, use_context=True, **kwargs):
+    async def _recv_stream(self, response, use_tools=True):
         """takes a response object and extracts the message from it, handling tool calls if needed. streaming version"""
         final_tool_calls = []
         tool_call_buffer = {}
@@ -385,7 +150,7 @@ class APIClient():
                     # yield the current token in the stream
                     if streamed_token.content:
                         tokens.append(streamed_token.content)
-                        yield {"type": "content", "text": streamed_token.content}
+                        yield {"type": "content", "content": streamed_token.content}
 
                     # Handle reasoning content streaming
                     reason_part = getattr(streamed_token, "reasoning_content", None) or \
@@ -393,7 +158,7 @@ class APIClient():
 
                     if reason_part:
                         reasoning_tokens.append(reason_part)
-                        yield {"type": "reasoning", "text": reason_part}
+                        yield {"type": "reasoning", "content": reason_part}
 
                     # extract tool calls, if any
                     if streamed_token.tool_calls and use_tools:
@@ -415,34 +180,10 @@ class APIClient():
                     final_tool_calls.append(tool_call)
 
                 # handle tool calls, if any
-                if final_tool_calls and core.config.get("tools", False):
-                    try:
-                        tokens.append("\n")
-                        toolcall_results = await self.manager.handle_tool_calls(final_tool_calls, use_context=use_context)
-                        if toolcall_results:
-                            for word in toolcall_results:
-                                tokens.append(word)
-                                yield {"type": "content", "text": word}
-                    except Exception as e:
-                        core.log_error(f"error while handling tool calls", e)
-                        if self.manager.channel:
-                            await self.manager.channel.announce(f"error while handling tool calls: {e}", "error")
+                if final_tool_calls and use_tools and core.config.get("tools", False):
+                    yield {"type": "tool_calls", "content": final_tool_calls}
 
-            if token_usage is None:
-                # fall back to tokenizer for context length counting
-                token_usage = self.count_tokens_local(context)
+            yield {"type": "token_usage", "content": token_usage}
 
-            # add it to context
-            if add_message:
-                final_content = "".join(tokens)
-                final_reasoning = "".join(reasoning_tokens) if reasoning_tokens else ""
-
-                assistant_msg = {"role": "assistant", "content": final_content}
-                if final_reasoning:
-                    assistant_msg["reasoning_content"] = final_reasoning
-
-                await self.insert_message_obj(assistant_msg, num_tokens=token_usage)
         except Exception as e:
             core.log_error("error while receiving response from AI", e)
-            if self.manager.channel:
-                await self.manager.channel.announce(f"error while receiving response from AI: {e}", "error")

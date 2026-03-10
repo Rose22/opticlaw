@@ -519,6 +519,88 @@ header h1 {
 }
 
 /* ==========================================================================
+ *  Conversation Title Bar
+ *  ========================================================================== */
+.conv-title-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    min-height: 40px;
+    position: relative;
+}
+
+.conv-title-text {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 400px;
+    text-align: center;
+}
+
+.conv-title-rename {
+    padding: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    flex-shrink: 0;
+    position: absolute;
+    right: 16px;
+}
+
+.conv-title-bar:hover .conv-title-rename {
+    opacity: 1;
+}
+
+.conv-title-rename:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.conv-title-rename:active {
+    transform: scale(0.95);
+}
+
+/* Hide rename button when no conversation */
+.conv-title-bar.no-conversation .conv-title-rename {
+    display: none;
+}
+
+.conv-title-bar.no-conversation .conv-title-text {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+@media (max-width: 600px) {
+    .conv-title-bar {
+        padding: 6px 12px;
+    }
+
+    .conv-title-text {
+        font-size: 0.85rem;
+        max-width: 200px;
+    }
+
+    .conv-title-rename {
+        opacity: 1;
+    }
+}
+
+/* ==========================================================================
    Search Bar
    ========================================================================== */
 .search-container {
@@ -1149,6 +1231,28 @@ header h1 {
     text-align: center;
     padding: 8px;
     font-size: 0.85rem;
+}
+
+.tool-decision-text {
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+    border-radius: 8px;
+    border-left: 3px solid var(--accent, #6366f1);
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+.tool-decision-text p:last-child {
+    margin-bottom: 0;
+}
+
+.assistant-turn {
+    margin-bottom: 12px;
+}
+
+.turn-container.current {
+    /* Current streaming turn */
 }
 
 /* Response Section */

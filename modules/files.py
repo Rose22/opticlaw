@@ -145,7 +145,7 @@ class Files(core.module.Module):
             if file_type == "directory":
                 try:
                     # run filesize check asynchronously
-                    size_bytes = await get_dir_size(file_path, self.manager.channel)
+                    size_bytes = await get_dir_size(file_path, self.channel)
                 except:
                     size_bytes = -1
             else:

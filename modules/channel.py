@@ -2,10 +2,10 @@ import core
 
 class Channel(core.module.Module):
     async def on_system_prompt(self):
-        if not self.manager.channel:
+        if not self.channel:
             return None
 
-        chan = core.module.get_name(self.manager.channel)
+        chan = core.module.get_name(self.channel)
         chan_instr = None
         match chan:
             case "cli":
@@ -23,10 +23,10 @@ class Channel(core.module.Module):
         return chan_instr
 
     async def on_end_prompt(self):
-        if not self.manager.channel:
+        if not self.channel:
             return None
 
-        chan = core.module.get_name(self.manager.channel)
+        chan = core.module.get_name(self.channel)
         chan_transl = {
             "cli": "Command Line Interface (CLI)",
             "webui": "WebUI",
