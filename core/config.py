@@ -41,14 +41,14 @@ default_config = {
 }
 
 default_modules = (
+    "modules",
+    "models",
     "identity",
+    "chats",
     "time",
-    "module",
-    "model",
     "memory",
     "scheduler",
     "channel",
-    "webui",
     "tokens"
 )
 

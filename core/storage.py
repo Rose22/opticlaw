@@ -199,7 +199,7 @@ class StorageDict(dict):
 
         if data:
             self.update(data)
-            return self
+            return True
 
         data = self._read()
         if not data:
@@ -214,6 +214,8 @@ class StorageDict(dict):
                 self.update(msgpack.unpackb(data))
             case "text":
                 self.update(data.split("\n"))
+
+        return True
 
 class StorageText:
     """simple class that saves its content to a text file"""

@@ -279,7 +279,7 @@ class Commands:
 
                 return "\n\n".join(context_display)
             case "restart":
-                await core.restart(self)
+                await core.restart(self.channel)
             case "stop":
                 # just use restart for now until i figure out how to kill the asyncio tasks
                 await self.channel.manager.API.cancel()

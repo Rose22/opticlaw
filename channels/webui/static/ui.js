@@ -3351,6 +3351,9 @@ async function saveSettings() {
     const btnText = saveBtn.querySelector('.btn-text');
     const btnLoading = saveBtn.querySelector('.btn-loading');
 
+    // Check if there are non-theme changes (require restart)
+    const hasNonThemeChanges = detectNonThemeChanges();
+
     saveBtn.disabled = true;
     btnText.style.display = 'none';
     btnLoading.style.display = 'flex';
@@ -3370,7 +3373,14 @@ async function saveSettings() {
 
         settingsOriginal = JSON.parse(JSON.stringify(settingsData));
         settingsHasChanges = false;
-        showSettingsSuccess();
+
+        // Show appropriate success message
+        if (hasNonThemeChanges) {
+            showSettingsSuccessWithRestart();
+            await restartServer();
+        } else {
+            showSettingsSuccess();
+        }
 
     } catch (err) {
         console.error('Failed to save settings:', err);
@@ -3380,6 +3390,177 @@ async function saveSettings() {
         btnText.style.display = 'inline';
         btnLoading.style.display = 'none';
     }
+}
+
+// Detect if there are changes beyond just theme
+function detectNonThemeChanges() {
+    const themeKeys = ['theme', 'theme_mode', 'themeFamily', 'themeMode'];
+
+    for (const key of Object.keys(settingsData)) {
+        if (themeKeys.some(tk => key.toLowerCase().includes(tk.toLowerCase()))) {
+            continue;
+        }
+
+        if (JSON.stringify(settingsData[key]) !== JSON.stringify(settingsOriginal[key])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Restart the server
+async function restartServer() {
+    try {
+        const restartMsg = document.getElementById('restart-message');
+        if (restartMsg) {
+            restartMsg.textContent = 'Restarting server...';
+        }
+
+        const response = await fetch('/server/restart', {
+            method: 'POST',
+            signal: AbortSignal.timeout(5000)
+        }).catch(() => {
+            // Server might disconnect during restart, which is expected
+            return { ok: true };
+        });
+
+        // Show restart notification
+        showRestartNotification();
+
+    } catch (err) {
+        // Expected - server is restarting
+        showRestartNotification();
+    }
+}
+
+// Show settings saved with restart message
+function showSettingsSuccessWithRestart() {
+    const form = document.getElementById('settings-form');
+    const existing = form.querySelector('.setting-success-msg');
+    if (existing) existing.remove();
+
+    const success = document.createElement('div');
+    success.className = 'setting-success-msg restart-pending';
+    success.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+    Settings saved! Server restarting...
+    `;
+
+    form.insertBefore(success, form.firstChild);
+}
+
+// Show restart notification
+function showRestartNotification() {
+    const form = document.getElementById('settings-form');
+    const existing = form.querySelector('.restart-notification');
+    if (existing) existing.remove();
+
+    const notification = document.createElement('div');
+    notification.className = 'restart-notification';
+    notification.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+    <path d="M21 3v5h-5"></path>
+    </svg>
+    <div class="restart-content">
+    <div class="restart-title">Server Restarting</div>
+    <div class="restart-desc">The server is applying your changes. The page will refresh when ready.</div>
+    </div>
+    `;
+
+    form.insertBefore(notification, form.firstChild);
+
+    // Start polling for server availability
+    pollForServerRestart();
+}
+
+// Poll for server to come back up
+function pollForServerRestart() {
+    let attempts = 0;
+    const maxAttempts = 60; // 30 seconds max
+
+    const poll = setInterval(async () => {
+        attempts++;
+
+        if (attempts >= maxAttempts) {
+            clearInterval(poll);
+            showRestartFailed();
+            return;
+        }
+
+        try {
+            const response = await fetch('/settings/load', {
+                method: 'GET',
+                signal: AbortSignal.timeout(1000)
+            });
+
+            if (response.ok) {
+                clearInterval(poll);
+                showRestartComplete();
+            }
+        } catch (err) {
+            // Server not ready yet, keep polling
+        }
+    }, 500);
+}
+
+// Show restart failed message
+function showRestartFailed() {
+    const notification = document.querySelector('.restart-notification');
+    if (notification) {
+        notification.classList.add('restart-failed');
+        notification.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <div class="restart-content">
+        <div class="restart-title">Restart Timeout</div>
+        <div class="restart-desc">The server took too long to restart. Please refresh manually.</div>
+        </div>
+        `;
+    }
+}
+
+// Show restart complete and refresh page
+function showRestartComplete() {
+    const notification = document.querySelector('.restart-notification');
+    if (notification) {
+        notification.classList.add('restart-complete');
+        notification.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <div class="restart-content">
+        <div class="restart-title">Server Restarted</div>
+        <div class="restart-desc">Refreshing page...</div>
+        </div>
+        `;
+    }
+
+    // Refresh the page after a short delay
+    setTimeout(() => {
+        window.location.reload();
+    }, 500);
+}
+
+// Show success message (theme only - no restart)
+function showSettingsSuccess() {
+    const form = document.getElementById('settings-form');
+    const existing = form.querySelector('.setting-success-msg, .restart-notification');
+    if (existing) existing.remove();
+
+    const success = document.createElement('div');
+    success.className = 'setting-success-msg';
+    success.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+    Settings saved!
+    `;
+
+    form.insertBefore(success, form.firstChild);
+    setTimeout(() => success.remove(), 3000);
 }
 
 // Show success message

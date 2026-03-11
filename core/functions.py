@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import traceback
+import asyncio
 
 def log(category: str, msg: str):
     """simple console log"""
@@ -16,7 +17,9 @@ def log_error(msg: str, e: Exception):
 async def restart(channel = None):
     if channel:
         await channel.announce("restarting server..")
-    time.sleep(0.1)
+    log("core", "restarting server..")
+
+    await asyncio.sleep(0.1)
     os.execv(sys.argv[0], sys.argv)
 
 def get_path(path: str = ""):

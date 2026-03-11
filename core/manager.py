@@ -45,12 +45,15 @@ class Manager:
 
     async def run(self):
         """main loop"""
+
+        core.log("core", "starting opticlaw..")
+
         # load channels
         if not core.config.get("channels").get("enabled"):
             print("ERROR: At least one channel must be enabled in the config! Try the `cli` channel for a basic terminal UI.")
             exit(1)
 
-        core.log("init", "loading channels")
+        core.log("core", "loading channels")
         import channels
         for channel in channels.get_all():
             # only load enabled channels
@@ -62,7 +65,7 @@ class Manager:
         # start channels
         for channel_name, channel in self.channels.items():
             self._async_tasks.add(asyncio.create_task(channel.run()))
-            core.log("init", f"started channel {channel_name}")
+            core.log("core", f"started channel {channel_name}")
 
         if not self.channel:
             # attempt to restore last used channel from save data
@@ -72,7 +75,7 @@ class Manager:
 
         # load modules
         if core.config.get("modules").get("enabled"):
-            core.log("init", "loading modules")
+            core.log("core", "loading modules")
             loaded_module_names = []
             for module in modules.get_all():
                 # only load enabled modules
@@ -87,21 +90,22 @@ class Manager:
                             task = asyncio.create_task(loaded_module.on_background(), name=module_name_snakecase)
                             task.add_done_callback(self._remove_async_task)
                             self._async_tasks.add(task)
-                            core.log("init", f"started background task {module_name_snakecase}")
+                            core.log("core", f"started background task {module_name_snakecase}")
 
                     loaded_module_names.append(module_name_snakecase)
-            core.log("init", f"modules loaded: {', '.join(loaded_module_names)}")
+            core.log("core", f"modules loaded: {', '.join(loaded_module_names)}")
         else:
-            core.log("init", "all modules disabled in config")
+            core.log("core", "all modules disabled in config")
 
         if not core.config.get("api").get("context_window"):
-            core.log("init", "context window is disabled")
+            core.log("core", "context window is disabled")
 
         # print()
         # print("\n".join(await self.get_status()))
         # print("---\n")
 
         # run everything
+        core.log("core", "startup complete")
         await asyncio.gather(*self._async_tasks)
 
     async def get_system_prompt(self):

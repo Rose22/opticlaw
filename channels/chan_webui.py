@@ -572,9 +572,24 @@ def delete_conversation():
 def load_settings():
     return jsonify(core.config.config)
 
-@app.route("/settings/save")
+@app.route("/settings/save", methods=["POST"])
 def save_settings():
-    pass
+    form_data = request.get_json()
+    result = core.config.config.load(data=form_data)
+    core.config.config.save()
+
+    if not result:
+        return jsonify({'success': False, 'error': 'something went wrong while saving settings!'})
+
+    return jsonify({"success": True})
+
+# =============================================================================
+# Server control routes
+# =============================================================================
+@app.route("/server/restart", methods=["POST"])
+def restart_server():
+    _run_async(core.restart())
+    return jsonify({"success": True})
 
 # =============================================================================
 # PWA Support Routes
