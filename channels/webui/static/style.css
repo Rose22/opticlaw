@@ -376,10 +376,10 @@ html, body {
     flex-direction: column;
     width: 100%;
     height: 100%;
-    max-width: 900px;
+    /* max-width: 900px; */
     margin: 0 auto;
     background: var(--bg-secondary);
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+    /* box-shadow: var(--shadow-soft); */
     min-height: 0;
 }
 
