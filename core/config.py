@@ -76,7 +76,6 @@ if not config:
     config.save()
     print()
     print(f"A configuration file has been created. Please find it at {config.path} and edit it to set up the connection to the API!")
-    exit()
 
 def get(*args, **kwargs):
     """shorthand for accessing config values"""

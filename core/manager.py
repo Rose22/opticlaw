@@ -90,6 +90,12 @@ class Manager:
         # run everything
         core.log("core", "startup complete")
 
+        if "webui" in core.config.get("channels").get("enabled"):
+            host = core.config.get("channels").get("settings").get("webui").get("host")
+            port = core.config.get("channels").get("settings").get("webui").get("port")
+            print()
+            print(f"Please open the WebUI at http://{host}:{port}")
+
         await asyncio.gather(*self._async_tasks, return_exceptions=True)
 
         if self._restart_requested:
@@ -237,7 +243,7 @@ class Manager:
             status_list.append(f"WebUI: {core.config.get('channels').get('settings').get('webui').get('host')}:{core.config.get('channels').get('settings').get('webui').get('port')}")
         status_list.append("AI model: " + str(self.API.get_model() or "Not set"))
 
-        if self.channel:
+        if self.channel is not None:
             status_list.append("")
 
             status_list.append("== context size ==")
