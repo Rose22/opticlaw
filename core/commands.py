@@ -1,5 +1,6 @@
 import core
 import textwrap
+import asyncio
 
 def get_commands_help(modules_dict):
     """
