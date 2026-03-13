@@ -16,7 +16,7 @@ class Characters(core.module.Module):
 
         # collect categories
         if not self.characters:
-            return {}
+            return "You have no characters yet"
 
         sorted_by_cat = {}
         for character_name, character in self.characters.items():
