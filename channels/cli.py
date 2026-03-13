@@ -62,26 +62,15 @@ class Cli(core.channel.Channel):
 
         with prompt_toolkit.patch_stdout.patch_stdout():
             while self.running:
-                try:
-                    msg = await prompt_session.prompt_async(
-                        self._get_prompt(),
-                        refresh_interval=0.5,
-                    )
+                msg = await prompt_session.prompt_async(
+                    self._get_prompt(),
+                    refresh_interval=0.5,
+                )
 
-                    if not msg.strip():
-                        continue
-
-                    await self._process_message(msg)
-
-                except prompt_toolkit.application.Abort:
-                    self._print_formatted("\nInterrupted.\n", "error")
+                if not msg.strip():
                     continue
-                except EOFError:
-                    self._print_formatted("\nGoodbye!\n", "status")
-                    break
-                except KeyboardInterrupt:
-                    self.shutdown()
-                    break
+
+                await self._process_message(msg)
 
         return True
 

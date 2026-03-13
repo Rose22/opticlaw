@@ -1057,6 +1057,138 @@
     color: var(--text-muted);
 }
 
+/* Model dropdown input styles */
+.model-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.model-input-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.model-select {
+    flex: 1;
+    padding: 8px 32px 8px 12px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border-color, #444);
+    background: var(--bg-secondary, #222);
+    color: var(--text-primary, #fff);
+    font-size: 14px;
+    cursor: pointer;
+    max-width: 100%;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+.model-select:hover {
+    border-color: var(--accent, #4a9eff);
+}
+
+.model-select:focus {
+    outline: none;
+    border-color: var(--accent, #4a9eff);
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+.model-select option {
+    background: var(--bg-secondary, #222);
+    color: var(--text-primary, #fff);
+    padding: 8px;
+}
+
+.model-select option:checked {
+    background: var(--accent, #4a9eff);
+    color: #fff;
+}
+
+.model-refresh-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 8px;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--border-color, #444);
+    background: var(--bg-tertiary, #1a1a1a);
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.model-refresh-btn:hover {
+    background: var(--bg-hover, #2a2a2a);
+    color: var(--text-primary, #fff);
+    border-color: var(--accent, #4a9eff);
+}
+
+.model-refresh-btn:active {
+    transform: scale(0.95);
+}
+
+.model-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.model-refresh-btn.loading svg {
+    animation: spin 1s linear infinite;
+}
+
+.model-refresh-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.model-error-msg {
+    color: var(--error-color, #ff6b6b);
+    font-size: 12px;
+    margin: 4px 0 0 0;
+}
+
+/* Light theme overrides */
+[data-theme="light"] .model-select,
+.theme-light .model-select {
+    background-color: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222);
+    border-color: var(--border-color, #ddd);
+}
+
+[data-theme="light"] .model-select option,
+.theme-light .model-select option {
+    background-color: var(--bg-secondary, #f5f5f5);
+    color: var(--text-primary, #222);
+}
+
+[data-theme="light"] .model-refresh-btn,
+.theme-light .model-refresh-btn {
+    background: var(--bg-tertiary, #fff);
+    color: var(--text-muted, #666);
+    border-color: var(--border-color, #ddd);
+}
+
+[data-theme="light"] .model-refresh-btn:hover,
+.theme-light .model-refresh-btn:hover {
+    background: var(--bg-hover, #f0f0f0);
+    color: var(--text-primary, #222);
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* ==========================================================================
  *  Utilities & Accessibility
  *  ========================================================================== */

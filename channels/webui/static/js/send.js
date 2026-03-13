@@ -45,19 +45,22 @@ async function send() {
     // Track if we started without a chat (for lazy creation)
     const startedWithoutChat = currentChatId === null;
 
+    // Track if stream had an error
+    let streamHadError = false;
+
     // Create user message element
     const userWrapper = document.createElement('div');
     userWrapper.className = message.trim().startsWith('/')
-    ? 'message-wrapper user_command'
-    : 'message-wrapper user';
+        ? 'message-wrapper user_command'
+        : 'message-wrapper user';
     userWrapper.classList.add('animate-in');
     userWrapper.setAttribute('role', 'article');
     userWrapper.dataset.index = 'pending';
 
     const userMsgDiv = document.createElement('div');
     userMsgDiv.className = message.trim().startsWith('/')
-    ? 'message user_command'
-    : 'message user';
+        ? 'message user_command'
+        : 'message user';
 
     if (message.trim().startsWith('/')) {
         userMsgDiv.innerHTML = `<pre>${escapeHtml(message)}</pre>`;
@@ -104,7 +107,7 @@ async function send() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message }),
-                                     signal: currentController.signal
+            signal: currentController.signal
         });
 
         // Handle server errors (not API errors)
@@ -198,7 +201,7 @@ async function send() {
                             }
 
                             const prevTurns = streamingTurns.map(t =>
-                            `<div class="assistant-turn">${renderMarkdown(t.content)}</div>`
+                                `<div class="assistant-turn">${renderMarkdown(t.content)}</div>`
                             ).join('');
 
                             aiMsgDiv.innerHTML = prevTurns + '<div class="turn-container current"></div>';
@@ -223,8 +226,67 @@ async function send() {
                             if (!streamStarted) {
                                 aiWrapper.classList.remove('hidden');
                             }
+
                             const errorDetails = data.error_data || {};
-                            aiMsgDiv.innerHTML = `<span style="color:#f88;">[Error: ${escapeHtml(errorDetails.message || data.error)}]</span>`;
+                            const errorMessage = errorDetails.message || 'An error occurred';
+                            const errorType = errorDetails.error || 'unknown';
+
+                            // Map API error types to user-friendly messages
+                            const errorTypeInfo = {
+                                'not_connected': {
+                                    title: 'Not Connected',
+                                    action: 'Please check your API configuration.'
+                                },
+                                'auth_failed': {
+                                    title: 'Authentication Failed',
+                                    action: 'Your API key may be invalid. Please check your settings.'
+                                },
+                                'connection_lost': {
+                                    title: 'Connection Lost',
+                                    action: 'Lost connection to the API server. Please try again.'
+                                },
+                                'rate_limit': {
+                                    title: 'Rate Limit Exceeded',
+                                    action: 'Please wait a moment and try again.'
+                                },
+                                'api_error': {
+                                    title: 'API Error',
+                                    action: 'The API returned an error. Please try again.'
+                                },
+                                'stream_failed': {
+                                    title: 'Stream Failed',
+                                    action: 'The response stream was interrupted.'
+                                },
+                                'processing_failed': {
+                                    title: 'Processing Failed',
+                                    action: 'Failed to process the AI response.'
+                                },
+                                'invalid_response': {
+                                    title: 'Invalid Response',
+                                    action: 'Received an invalid response from the API.'
+                                }
+                            };
+
+                            const info = errorTypeInfo[errorType] || { title: 'Error', action: '' };
+
+                            // Show as inline error in message
+                            aiMsgDiv.innerHTML = `
+                                <div class="api-error-inline">
+                                    <div class="api-error-header">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <line x1="12" y1="8" x2="12" y2="12"/>
+                                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                        </svg>
+                                        <span class="api-error-title">${escapeHtml(info.title)}</span>
+                                    </div>
+                                    <div class="api-error-message">${escapeHtml(errorMessage)}</div>
+                                    ${info.action ? `<div class="api-error-action">${escapeHtml(info.action)}</div>` : ''}
+                                </div>
+                            `;
+
+                            streamHadError = true;
+                            // Don't break - let the stream complete so we get the 'done' signal
                         }
                     } catch (e) {
                         // Ignore parse errors
@@ -237,7 +299,21 @@ async function send() {
             if (!streamStarted) {
                 aiWrapper.classList.remove('hidden');
             }
-            aiMsgDiv.innerHTML = '<span style="color:#f88;">Error: ' + escapeHtml(err.message) + '</span>';
+            aiMsgDiv.innerHTML = `
+                <div class="api-error-inline">
+                    <div class="api-error-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <span class="api-error-title">Connection Error</span>
+                    </div>
+                    <div class="api-error-message">${escapeHtml(err.message)}</div>
+                    <div class="api-error-action">Could not reach the server. Please check your connection.</div>
+                </div>
+            `;
+            streamHadError = true;
         }
     } finally {
         const reasoningWrapper = aiWrapper.querySelector('.reasoning-wrapper');
@@ -247,10 +323,23 @@ async function send() {
         }
 
         finishStream();
-        userWrapper.remove();
-        aiWrapper.remove();
 
-        await syncMessages();
+        // Only remove the placeholder messages if we didn't have an error
+        // This lets the error message stay visible
+        if (!streamHadError) {
+            userWrapper.remove();
+            aiWrapper.remove();
+            await syncMessages();
+        } else {
+            // For errors, just remove the pending user message
+            // but keep the error visible in the AI message
+            userWrapper.remove();
+            // Update the actions to not be disabled
+            const actions = aiWrapper.querySelector('.message-actions');
+            if (actions) {
+                actions.querySelectorAll('button').forEach(btn => btn.disabled = false);
+            }
+        }
 
         const chatResponse = await fetch('/chat/current');
         const chatData = await chatResponse.json();

@@ -5,6 +5,8 @@
 let settingsData = {};
 let settingsOriginal = {};
 let settingsHasChanges = false;
+let cachedModels = null;
+let modelsLoadError = null;
 
 // Category icons
 const SETTINGS_ICONS = {
@@ -32,6 +34,34 @@ function getAllToggleItems(data) {
     const enabled = Array.isArray(data.enabled) ? data.enabled : [];
     const disabled = Array.isArray(data.disabled) ? data.disabled : [];
     return [...new Set([...enabled, ...disabled])].sort();
+}
+
+// Check if a key is a model name field
+function isModelNameField(key) {
+    return key === 'model.name' || key.endsWith('.model.name') || key === 'model_name';
+}
+
+// Fetch models from the API
+async function fetchModels() {
+    try {
+        const response = await fetch('/api/models', {
+            signal: AbortSignal.timeout(10000)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Server returned ${response.status}`);
+        }
+
+        const data = await response.json();
+        cachedModels = data.models || [];
+        modelsLoadError = null;
+        return { success: true, models: cachedModels };
+    } catch (err) {
+        console.error('Failed to fetch models:', err);
+        modelsLoadError = err.message || 'Failed to fetch models';
+        return { success: false, error: modelsLoadError, models: [] };
+    }
 }
 
 // Organize settings into categories, grouping by second-level key (e.g. modules.X)
@@ -115,7 +145,7 @@ function organizeSettingsIntoCategories(originalData) {
                             addToGroup(groupKey, groupTitle, {
                                 key: groupKey,
                                 value: itemSettings,
-                                type: isToggleList(itemSettings) ? 'toggle_list' : detectType(itemSettings),
+                                type: isToggleList(itemSettings) ? 'toggle_list' : detectType(itemSettings, groupKey),
                                        description: FIELD_DESCRIPTIONS[groupKey] || null
                             });
                         }
@@ -132,7 +162,7 @@ function organizeSettingsIntoCategories(originalData) {
                 addToGroup('_direct_', null, {
                     key: groupKey,
                     value: secondValue,
-                    type: detectType(secondValue)
+                    type: detectType(secondValue, groupKey)
                 }, true);
             }
             continue;
@@ -165,7 +195,7 @@ function organizeSettingsIntoCategories(originalData) {
                             addToGroup(groupKey, groupTitle, {
                                 key: groupKey,
                                 value: itemSettings,
-                                type: isToggleList(itemSettings) ? 'toggle_list' : detectType(itemSettings),
+                                type: isToggleList(itemSettings) ? 'toggle_list' : detectType(itemSettings, groupKey),
                                        description: FIELD_DESCRIPTIONS[groupKey] || null
                             });
                         }
@@ -198,7 +228,7 @@ function organizeSettingsIntoCategories(originalData) {
                 addToGroup('_direct_', null, {
                     key: `${category}.${key}`,
                     value: value,
-                    type: detectType(value)
+                    type: detectType(value, `${category}.${key}`)
                 }, true);
             }
 
@@ -218,7 +248,7 @@ function organizeSettingsIntoCategories(originalData) {
                         addToGroup(groupKey, groupTitle, {
                             key: groupKey,
                             value: secondValue,
-                            type: isToggleList(secondValue) ? 'toggle_list' : detectType(secondValue),
+                            type: isToggleList(secondValue) ? 'toggle_list' : detectType(secondValue, groupKey),
                                    description: FIELD_DESCRIPTIONS[groupKey] || null
                         });
                     }
@@ -228,7 +258,7 @@ function organizeSettingsIntoCategories(originalData) {
             addToGroup(topKey, formatLabel(topKey), {
                 key: topKey,
                 value: topValue,
-                type: detectType(topValue)
+                type: detectType(topValue, topKey)
             });
         }
     }
@@ -249,7 +279,7 @@ function flattenSettingsObject(obj, prefix, callback) {
                 callback({
                     key: fullKey,
                     value: value,
-                    type: isToggleList(value) ? 'toggle_list' : detectType(value),
+                    type: isToggleList(value) ? 'toggle_list' : detectType(value, fullKey),
                          description: FIELD_DESCRIPTIONS[fullKey] || null
                 });
             }
@@ -257,13 +287,17 @@ function flattenSettingsObject(obj, prefix, callback) {
 }
 
 // Detect field type from value
-function detectType(value) {
+function detectType(value, key = '') {
     if (value === null || value === undefined) return 'text';
     if (typeof value === 'boolean') return 'boolean';
     if (typeof value === 'number') return 'number';
     if (Array.isArray(value)) return 'array';
     if (typeof value === 'object') return 'object';
     if (typeof value === 'string') {
+        // Check if this is a model name field
+        if (key && isModelNameField(key)) {
+            return 'model';
+        }
         if (value.includes('\n')) return 'textarea';
         if (value.match(/^https?:\/\//)) return 'url';
     }
@@ -272,7 +306,8 @@ function detectType(value) {
 
 // Field descriptions (optional, can be empty)
 const FIELD_DESCRIPTIONS = {
-    'api.key': 'API authentication key'
+    'api.key': 'API authentication key',
+    'model.name': 'The AI model to use for responses'
 };
 
 // Flatten nested object to dot-notation keys
@@ -349,6 +384,12 @@ async function loadSettings() {
         settingsData = await response.json();
         settingsOriginal = JSON.parse(JSON.stringify(settingsData));
 
+        // Pre-fetch models if we have a model field
+        const hasModelField = checkForModelField(settingsData);
+        if (hasModelField) {
+            await fetchModels();
+        }
+
         const categories = organizeSettingsIntoCategories(settingsData);
 
         renderSettingsForm(categories);
@@ -365,6 +406,24 @@ async function loadSettings() {
         error.style.display = 'flex';
         errorMsg.textContent = err.message || 'Failed to load settings';
     }
+}
+
+// Check if settings contain a model field
+function checkForModelField(data, prefix = '') {
+    for (const [key, value] of Object.entries(data)) {
+        const fullKey = prefix ? `${prefix}.${key}` : key;
+
+        if (isModelNameField(fullKey)) {
+            return true;
+        }
+
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            if (checkForModelField(value, fullKey)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Render settings navigation
@@ -517,6 +576,9 @@ function createSettingItem(item) {
     let inputEl;
 
     switch (item.type) {
+        case 'model':
+            inputEl = createModelInput(item.key, item.value);
+            break;
         case 'toggle_list':
             inputEl = createToggleListInput(item.key, item.value);
             break;
@@ -551,6 +613,170 @@ function createSettingItem(item) {
         wrapper.appendChild(desc);
     }
 
+    return wrapper;
+}
+
+// Create model dropdown input with refresh button
+function createModelInput(key, value) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'model-input-wrapper';
+    wrapper.dataset.key = key;
+
+    const inputContainer = document.createElement('div');
+    inputContainer.className = 'model-input-container';
+
+    // Check if we have cached models
+    const hasModels = cachedModels && cachedModels.length > 0;
+
+    if (hasModels) {
+        // Create dropdown
+        const select = document.createElement('select');
+        select.className = 'setting-input model-select';
+        select.dataset.key = key;
+
+        // Add placeholder option
+        const placeholderOption = document.createElement('option');
+        placeholderOption.value = '';
+        placeholderOption.textContent = '-- Select a model --';
+        select.appendChild(placeholderOption);
+
+        // Add models from cache
+        cachedModels.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = model.id;
+            if (model.id === value) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+
+        // If current value not in list, add it as custom
+        if (value && !cachedModels.find(m => m.id === value)) {
+            const customOption = document.createElement('option');
+            customOption.value = value;
+            customOption.textContent = `${value} (custom)`;
+            customOption.selected = true;
+            select.insertBefore(customOption, placeholderOption.nextSibling);
+        }
+
+        // Handle change
+        select.onchange = () => {
+            handleSettingChange(key, select.value);
+        };
+
+        inputContainer.appendChild(select);
+
+        // Add refresh button
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'model-refresh-btn';
+        refreshBtn.title = 'Refresh model list';
+        refreshBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+        <path d="M21 3v5h-5"></path>
+        </svg>
+        `;
+
+        refreshBtn.onclick = async () => {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('loading');
+
+            const result = await fetchModels();
+
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('loading');
+
+            if (result.success) {
+                // Re-render the model input
+                const newInput = createModelInput(key, select.value);
+                wrapper.replaceWith(newInput);
+            } else {
+                // Show error, fall back to text input
+                const textInput = createTextInput(key, value, 'text');
+                wrapper.replaceWith(textInput);
+
+                // Show error message
+                const parent = textInput.closest('.setting-item');
+                if (parent) {
+                    let errorEl = parent.querySelector('.model-error-msg');
+                    if (!errorEl) {
+                        errorEl = document.createElement('p');
+                        errorEl.className = 'model-error-msg';
+                        parent.appendChild(errorEl);
+                    }
+                    errorEl.textContent = `Could not load models: ${result.error}`;
+                }
+            }
+        };
+
+        inputContainer.appendChild(refreshBtn);
+
+    } else {
+        // Fall back to text input
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'setting-input';
+        input.dataset.key = key;
+        input.value = value ?? '';
+        input.placeholder = 'Enter model name';
+        input.oninput = () => handleSettingChange(key, input.value);
+
+        inputContainer.appendChild(input);
+
+        // Add refresh button to try loading models again
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'model-refresh-btn';
+        refreshBtn.title = 'Load models from API';
+        refreshBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
+        <path d="M21 3v5h-5"></path>
+        </svg>
+        `;
+
+        refreshBtn.onclick = async () => {
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('loading');
+
+            const result = await fetchModels();
+
+            refreshBtn.disabled = false;
+            refreshBtn.classList.remove('loading');
+
+            if (result.success && result.models.length > 0) {
+                // Re-render as dropdown
+                const newInput = createModelInput(key, input.value);
+                wrapper.replaceWith(newInput);
+            } else {
+                // Show error message
+                const parent = wrapper.closest('.setting-item');
+                if (parent) {
+                    let errorEl = parent.querySelector('.model-error-msg');
+                    if (!errorEl) {
+                        errorEl = document.createElement('p');
+                        errorEl.className = 'model-error-msg';
+                        parent.appendChild(errorEl);
+                    }
+                    errorEl.textContent = `Could not load models: ${result.error}`;
+                }
+            }
+        };
+
+        inputContainer.appendChild(refreshBtn);
+
+        // Show error if we have one
+        if (modelsLoadError) {
+            const errorMsg = document.createElement('p');
+            errorMsg.className = 'model-error-msg';
+            errorMsg.textContent = `Could not load models: ${modelsLoadError}`;
+            inputContainer.appendChild(errorMsg);
+        }
+    }
+
+    wrapper.appendChild(inputContainer);
     return wrapper;
 }
 

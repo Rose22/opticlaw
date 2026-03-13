@@ -850,3 +850,42 @@
     0%, 80%, 100% { transform: scale(0.8); }
     40% { transform: scale(1.2); }
 }
+
+/* API Error Display */
+.api-error-inline {
+    background: var(--bg-error, rgba(244, 63, 94, 0.1));
+    border: 1px solid var(--border-error, rgba(244, 63, 94, 0.3));
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 4px 0;
+}
+
+.api-error-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--text-error, #f43f5e);
+}
+
+.api-error-header svg {
+    flex-shrink: 0;
+}
+
+.api-error-title {
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.api-error-message {
+    color: var(--text, inherit);
+    font-size: 0.9em;
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+
+.api-error-action {
+    color: var(--text-muted, #6b7280);
+    font-size: 0.85em;
+    font-style: italic;
+}
