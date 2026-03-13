@@ -7,7 +7,7 @@ class Context(core.module.Module):
     async def show_sysprompt(self, args):
         """shows only the system prompt"""
 
-        if not core.config.get("api").get("context_window"):
+        if not core.config.get("api").get("context_window", True):
             return "CONTEXT DISABLED"
 
         _sysprompt = await self.channel.manager.get_system_prompt()
@@ -32,7 +32,7 @@ class Context(core.module.Module):
     async def show_context(self, args):
         """shows current context window"""
 
-        if not core.config.get("api").get("context_window"):
+        if not core.config.get("api").get("context_window", True):
             return "CONTEXT DISABLED"
 
         show_system_prompt = True if len(args) and args[0] == "full" else False
