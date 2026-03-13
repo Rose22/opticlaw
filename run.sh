@@ -10,4 +10,5 @@ fi
 # auto update
 git pull
 # aaand run!
-venv/bin/python main.py
+source venv/bin/activate
+python main.py
