@@ -1,9 +1,0 @@
-__pycache__/
-venv/
-data/
-config/
-tmp/
-config.yaml
-test.py
-read_mp.py
-memory.json
