@@ -71,9 +71,14 @@ class Characters(core.module.Module):
 
     async def on_system_prompt(self):
         curr_char = self.characters.get(self.active_character.get())
+
+        tool_text = ""
+        if core.config.get("model").get("use_tools", False):
+            tool_text = f"You can switch between identities using character_switch(). User can switch characters using the `/character` command. Characters available to switch yourself to:\n{await self._list_characters()}"
+
         if not curr_char:
-            # don't include a character in the system prompt
-            return None
+            # don't include a character in the system prompt. just provide info on what can be switched to
+            return tool_text
 
         character_text = ""
         character_name = self.active_character.get()
@@ -87,10 +92,6 @@ class Characters(core.module.Module):
         user_profile = ""
         if self.user_profile:
             user_profile = f"## User\nName: {self.user_profile.get('name')}\nProfile: {self.user_profile.get('profile')}"
-
-        tool_text = ""
-        if core.config.get("model").get("use_tools", False):
-            tool_text = f"You can switch between identities using character_switch(). User can switch characters using the `/character` command. Characters available to switch yourself to:\n{await self._list_characters()}"
 
         return f"{user_profile}\n\n## You\n{character_text}\n\n{tool_text}"
 
