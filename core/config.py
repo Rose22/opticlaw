@@ -57,6 +57,31 @@ default_modules = (
     "time"
 )
 
+def sync_config(user_config, defaults):
+    """
+    recursively sync user config with defaults
+    """
+    # Base case: if defaults isn't a dict, can't recurse further
+    if not isinstance(defaults, dict):
+        return defaults
+
+    result = {}
+
+    for key, default_value in defaults.items():
+        if key in user_config:
+            user_value = user_config[key]
+            # Recurse if both are dicts
+            if isinstance(default_value, dict) and isinstance(user_value, dict):
+                result[key] = sync_config(user_value, default_value)
+            else:
+                # Key exists - keep the user's value
+                result[key] = user_value
+        else:
+            # Key missing from user config - add default
+            result[key] = default_value
+
+    return result
+
 for channel in channels.get_all(respect_config=False):
     channel_name = core.module.get_name(channel)
     if channel == "debug":
@@ -76,7 +101,15 @@ if not config:
     config.load(default_config)
     config.save()
     print()
-    print(f"A configuration file has been created. Please find it at {config.path} and edit it to set up the connection to the API!")
+    print(f"A new configuration file has been created. You can use the WebUI to easily change your settings, or manually edit it at {config.path}.")
+else:
+    user_config = dict(config)
+    synced_config = sync_config(user_config, default_config)
+    if synced_config != user_config:
+        config.clear()
+        config.update(synced_config)
+        config.save()
+        core.log("core", "Your configuration file was updated with new settings")
 
 def get(*args, **kwargs):
     """shorthand for accessing config values"""
