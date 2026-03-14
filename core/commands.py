@@ -1,5 +1,6 @@
 import core
 import textwrap
+import asyncio
 
 def get_commands_help(modules_dict):
     """
@@ -222,6 +223,7 @@ class Commands:
             case "restart":
                 #await core.restart(self.channel)
                 await self.channel.manager.restart()
+                return "restarting.."
             case "stop":
                 # just use restart for now until i figure out how to kill the asyncio tasks
                 await self.channel.manager.API.cancel()

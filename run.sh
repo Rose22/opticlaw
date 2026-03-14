@@ -7,4 +7,8 @@ if [ ! -d "venv" ]; then
     venv/bin/pip install -r requirements.txt
 fi
 
-venv/bin/python main.py
+# auto update
+git pull
+# aaand run!
+source venv/bin/activate
+python main.py

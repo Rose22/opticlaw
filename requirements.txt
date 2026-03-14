@@ -3,7 +3,7 @@ tiktoken
 prompt_toolkit
 msgpack
 pyyaml
-json_repair
+json-repair
 aiofiles
 python-ulid
 requests

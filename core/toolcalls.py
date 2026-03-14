@@ -127,6 +127,7 @@ class ToolcallManager:
         ] + context
 
         final_content = []
+        final_reasoning = []
         had_recursive_call = False
 
         try:
@@ -138,6 +139,9 @@ class ToolcallManager:
                 if token_type in ("content", "reasoning"):
                     final_content.append(token.get("content"))
                     yield token
+                elif token_type == "reasoning":
+                    # only collect reasoning, in case there was no normal message content. dont yield.
+                    final_reasoning.append(token.get("content"))
                 elif token_type == "tool_calls":
                     # Mark that we made a recursive call
                     had_recursive_call = True
@@ -149,6 +153,9 @@ class ToolcallManager:
                         yield sub_token
                 elif token_type == "usage":
                     pass
+
+            if not final_content:
+                final_content = final_reasoning
 
             # Only add final message if we didn't make a recursive call
             # (the innermost call handles adding the final message)
