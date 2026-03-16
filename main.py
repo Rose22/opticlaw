@@ -15,6 +15,7 @@ import os
 import sys
 import asyncio
 import core
+import subprocess
 
 async def main():
     # the manager class connects everything together
